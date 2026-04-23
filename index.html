@@ -1,0 +1,2192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>函南少年野球クラブ試合速報</title>
+  <style>
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Helvetica Neue",sans-serif;background:#f4f6f8;}
+    input,button,select,textarea{font-family:inherit;}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.5/babel.min.js"></script>
+  <script crossorigin src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script crossorigin src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+    const _fbApp = firebase.initializeApp({
+      databaseURL: "https://kannami-baseball-default-rtdb.asia-southeast1.firebasedatabase.app"
+    });
+    const _db = firebase.database();
+    const SECRET = "kbc2026";
+
+    function useFirebaseSync(initialG) {
+      const [G, setG] = useState(initialG);
+      const [connected, setConnected] = useState(false);
+      const isPushing = useRef(false);
+      useEffect(() => {
+        const connRef = _db.ref(".info/connected");
+        connRef.on("value", function(snap) { setConnected(snap.val() === true); });
+        const gameRef = _db.ref("gameState");
+        gameRef.on("value", function(snap) {
+          const val = snap.val();
+          if (!val) return;
+          if (isPushing.current) return;
+          try {
+            const merged = Object.assign({}, initialG, val);
+            delete merged.secret;
+            setG(merged);
+          } catch(e) { console.error("Firebase parse error:", e); }
+        });
+        return function() { connRef.off(); gameRef.off(); };
+      }, []);
+      const pushG = function(newG) {
+        isPushing.current = true;
+        const data = Object.assign({}, newG, {secret: SECRET});
+        _db.ref("gameState").set(data).catch(function(e) { console.error(e); });
+        setTimeout(function() { isPushing.current = false; }, 500);
+      };
+      return [G, setG, pushG, connected];
+    }
+
+
+const INIT_G = {
+  ourTeam:"函南", oppTeam:"浜北",
+  maxInnings:7, batFirst:true,
+  inning:1, isTop:true,
+  balls:0, strikes:0, outs:0,
+  bases:[false,false,false],
+  runnerNames:[null,null,null],
+  ourScore:0, oppScore:0,
+  innOur:[], innOpp:[],
+  lineup:[
+    {name:"塩谷",pos:"左",num:"8", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"樋口",pos:"遊",num:"6", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"小野坂",pos:"三",num:"3",ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"田中",pos:"投",num:"9", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"武士",pos:"右",num:"1", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"太田",pos:"捕",num:"10",ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"青木",pos:"一",num:"2", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"土屋",pos:"中",num:"4", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"竹内",pos:"二",num:"5", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+  ],
+  scorebook: Array(9).fill(null).map(()=>({})),
+  lineupThem:[
+    {name:"山下",pos:"左",num:"6", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"雷永",pos:"右",num:"2", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"渋崎",pos:"中",num:"10",ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"河合",pos:"投",num:"11",ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"松野",pos:"遊",num:"16",ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"藤原",pos:"三",num:"3", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"深谷",pos:"一",num:"5", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"青嶋",pos:"二",num:"7", ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+    {name:"太田",pos:"捕",num:"12",ab:0,hits:0,rbi:0,runs:0,pitchCount:0},
+  ],
+  scorebookThem: Array(9).fill(null).map(()=>({})),
+  bench:[
+    {name:"三田", pos:"三",num:"7", ab:0,hits:0,rbi:0,runs:0,retired:false},
+  ],
+  benchThem:[
+    {name:"梁本", pos:"左",num:"15",ab:0,hits:0,rbi:0,runs:0,retired:false},
+    {name:"林",   pos:"右",num:"8", ab:0,hits:0,rbi:0,runs:0,retired:false},
+  ],
+  currentBatter:0, currentBatterThem:0, substitutions:[], log:[],
+  pitchCount:0, pitchCountThem:0,
+  pitcherName:"田中", pitcherNameThem:"河合",
+  pitchLog:[],
+  tieBreak:false, tieBreakStart:8,
+  coldGame:false, coldDiff:10, coldInning:3,
+  maxExtraInnings:2,
+  gameOver:false,
+  events:[],
+  gameDate:"", gameLocation:"", gameStartTime:"",
+};
+
+const OUTP=['K','KS','GO','FO','DP','SF','SH'];
+const HITS=['1B','2B','3B','HR','BB','HBP','FC'];
+const PL={'1B':'単打','2B':'二塁打','3B':'三塁打','HR':'本塁打','BB':'四球','HBP':'死球','FC':'野選','K':'K','KS':'○K','KR':"K'",'GO':'ゴロ','FO':'フライ','DP':'ゲッツー','SB':'盗塁','CS':'盗塁死','SF':'犠飛','SH':'犠打'};
+const ADV={'1B':1,'2B':2,'3B':3,'HR':4,'BB':1,'HBP':1,'FC':1,'E':1};
+const C={bg:"#f4f6f8",card:"#fff",border:"#d0d7e0",text:"#1a2332",green:"#1a7a3a",red:"#cc2222",blue:"#1558c0",gold:"#9a7009",gray:"#6b7a8d",navy:"#1a3a6a"};
+const POSITIONS=["投","捕","一","二","三","遊","左","中","右","指"];
+const cp=x=>JSON.parse(JSON.stringify(x));
+const ts=()=>{const n=new Date();return `${n.getHours()}:${String(n.getMinutes()).padStart(2,"0")}`;};
+
+function ensureInn(g){while(g.innOur.length<g.inning)g.innOur.push(0);while(g.innOpp.length<g.inning)g.innOpp.push(0);}
+function addLog(g,msg,type){g.log.unshift({msg,type,t:ts()});}
+function pushEvent(g,ev){if(!g.events)g.events=[];g.events.push({id:Date.now()+Math.random(),t:ts(),inning:g.inning,isTop:g.isTop,...ev});}
+function autoScore(g,isOurs){
+  ensureInn(g);
+  if(isOurs){g.ourScore++;g.innOur[g.inning-1]++;}
+  else{g.oppScore++;g.innOpp[g.inning-1]++;}
+  addLog(g,`🏠 得点！(${g.ourScore}-${g.oppScore})`,"r");
+  const isBottom=(g.batFirst&&!g.isTop)||(!g.batFirst&&g.isTop);
+  if(isBottom&&!g.gameOver){
+    const ourIsBottom=!g.batFirst;
+    const ourS=g.ourScore, oppS=g.oppScore;
+    const bottomLeads=ourIsBottom?(ourS>oppS):(oppS>ourS);
+    if(bottomLeads&&g.inning>=g.maxInnings){g.gameOver=true;addLog(g,"🏁 サヨナラ！試合終了！","r");return;}
+    if(checkColdGame(g)){g.gameOver=true;addLog(g,"🏁 コールドゲーム成立！","r");}
+  }
+}
+function advBases(g,sp,isHR,isOurs,bat,order){
+  if(!g.runnerNames)g.runnerNames=[null,null,null];
+  if(isHR){const r=g.bases.filter(Boolean).length;g.bases=[false,false,false];g.runnerNames=[null,null,null];for(let i=0;i<=r;i++)autoScore(g,isOurs);return;}
+  for(let i=2;i>=0;i--){
+    if(g.bases[i]){
+      const nm=g.runnerNames[i];
+      const np=i+sp;
+      if(sp===1&&i===2)continue;
+      if(np<3&&g.bases[np])continue;
+      g.bases[i]=false;g.runnerNames[i]=null;
+      if(np>=3)autoScore(g,isOurs);
+      else{g.bases[np]=true;g.runnerNames[np]=nm;}
+    }
+  }
+  if(sp<=3){
+    const lbl=order!=null?`${order}${bat?bat.name.slice(0,2):"?"}`:(bat?bat.name.slice(0,3):"?");
+    g.bases[sp-1]=true;g.runnerNames[sp-1]=lbl;
+  }
+}
+function advBasesBB(g,isOurs,bat,order){
+  if(!g.runnerNames)g.runnerNames=[null,null,null];
+  let chain=0;
+  while(chain<3&&g.bases[chain])chain++;
+  for(let i=chain-1;i>=0;i--){const nm=g.runnerNames[i];g.bases[i]=false;g.runnerNames[i]=null;if(i+1>=3){autoScore(g,isOurs);}else{g.bases[i+1]=true;g.runnerNames[i+1]=nm;}}
+  const lbl=order!=null?`${order}${bat?bat.name.slice(0,2):"?"}`:(bat?bat.name.slice(0,3):"?");
+  g.bases[0]=true;g.runnerNames[0]=lbl;
+}
+function checkColdGame(g){
+  if(!g.coldGame||g.gameOver)return false;
+  const diff=Math.abs(g.ourScore-g.oppScore);
+  if(diff<g.coldDiff)return false;
+  const inningOk=g.inning>=g.coldInning;
+  if(!inningOk)return false;
+  return true;
+}
+function setupTieBreak(g){
+  g.outs=0;g.balls=0;g.strikes=0;
+  g.bases=[true,true,false]; // 無死1・2塁
+  const isOurs=(g.batFirst&&g.isTop)||(!g.batFirst&&!g.isTop);
+  const lu=isOurs?g.lineup:g.lineupThem;
+  const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+  const len=Math.max(lu.length,1);
+  const r1=lu[(cb-1+len)%len]; // 直前の打者→1塁
+  const r2=lu[(cb-2+len)%len]; // 2つ前の打者→2塁
+  g.runnerNames=[
+    r1?r1.name.slice(0,3):"走者", // index0=1塁
+    r2?r2.name.slice(0,3):"走者", // index1=2塁
+    null
+  ];
+  addLog(g,`⚡ タイブレーク開始（無死1・2塁）`,"s");
+}
+function doChange(g){
+  ensureInn(g);
+  g.outs=0;g.balls=0;g.strikes=0;g.bases=[false,false,false];g.runnerNames=[null,null,null];
+  if(!g.isTop){
+    if(checkColdGame(g)){g.gameOver=true;addLog(g,"🏁 コールドゲーム成立！","r");return;}
+    g.inning++;
+    if(g.inning>g.maxInnings){
+      // 通常イニング終了後の同点チェック（延長打ち切り）
+      const maxEx=g.maxExtraInnings||2;
+      const extraDone=g.inning-g.maxInnings; // 何延長終わったか
+      if(g.ourScore===g.oppScore&&extraDone>maxEx){
+        g.gameOver=true;
+        addLog(g,`🏁 延長${maxEx}回終了 引き分け・抽選！`,"r");
+        return;
+      }
+      if(g.ourScore!==g.oppScore&&extraDone>maxEx){
+        addLog(g,"🏁 試合終了！","r");g.gameOver=true;return;
+      }
+      if(g.ourScore!==g.oppScore){addLog(g,"🏁 試合終了！","r");g.gameOver=true;return;}
+      // 同点で延長続行
+    }
+  }
+  g.isTop=!g.isTop;
+  if(g.tieBreak&&g.inning>=g.tieBreakStart){setupTieBreak(g);}
+  addLog(g,`🔄 ${g.inning}回${g.isTop?"表":"裏"} 開始`,"s");
+}
+function addPitchCount(g){
+  const isOursBatting=(g.batFirst&&g.isTop)||(!g.batFirst&&!g.isTop);
+  if(isOursBatting){g.pitchCountThem=(g.pitchCountThem||0)+1;}else{g.pitchCount=(g.pitchCount||0)+1;}
+  const defLineup=isOursBatting?g.lineupThem:g.lineup;
+  const pitcher=defLineup.find(p=>p.pos==="投"||p.pos==="1");
+  if(pitcher)pitcher.pitchCount=(pitcher.pitchCount||0)+1;
+  if(!g.pitchLog)g.pitchLog=[];
+  g.pitchLog.push({inn:g.inning,isTop:g.isTop,pitch:"result",t:""});
+}
+function setSB(g,key,type,note,fldLabel){
+  const b=g.lineup[g.currentBatter];if(!b)return;
+  if(!g.scorebook[g.currentBatter])g.scorebook[g.currentBatter]={};
+  const sb=g.scorebook[g.currentBatter];
+  const arrKey=key+"_arr";
+  if(!sb[arrKey])sb[arrKey]=[];
+  sb[arrKey].push({type,note:note||type,dir:fldLabel||""});
+  sb[key]=type;
+  sb[key+"_note"]=note||type;
+  if(fldLabel)sb[key+"_dir"]=fldLabel;
+}
+
+function FieldSvg({selected,onTap,bases,runnerNames,onToggleBase,selectedBase}){
+  const isOn=id=>selected===id||(selected&&selected.length===2&&selected.includes(id));
+  const isSecond=id=>selected&&selected.length===2&&selected[1]===id;
+  const s=id=>({cursor:"pointer",
+    fill:isOn(id)?(isSecond(id)?"rgba(100,200,255,.75)":"rgba(255,200,0,.75)"):"rgba(0,60,0,.55)",
+    stroke:isOn(id)?(isSecond(id)?"#0288d1":"#e65100"):"#1b5e20",
+    strokeWidth:isOn(id)?3:1.5});
+  const tn={fontFamily:"monospace",fontSize:16,fontWeight:"bold",fill:"#fff",pointerEvents:"none",dominantBaseline:"middle",textAnchor:"middle"};
+  const BP=[[1,165,118],[2,110,68],[3,55,118]];
+  return(
+    <svg viewBox="0 0 220 200" style={{width:"100%",maxWidth:260,display:"block",margin:"0 auto 6px"}}>
+      <rect width="220" height="200" fill="#1b5e20" pointerEvents="none"/>
+      <path d="M 110,168 L 220,73 L 220,0 L 0,0 L 0,73 Z" fill="#2e7d32" pointerEvents="none"/>
+      <circle cx="110" cy="118" r="62" fill="#388e3c" pointerEvents="none"/>
+      <polygon points="110,68 165,118 110,168 55,118" fill="#8d6e3a" stroke="#6d4c2a" strokeWidth="1" pointerEvents="none"/>
+      <line x1="110" y1="168" x2="165" y2="118" stroke="#6d4c2a" strokeWidth="1" pointerEvents="none"/>
+      <line x1="165" y1="118" x2="110" y2="68" stroke="#6d4c2a" strokeWidth="1" pointerEvents="none"/>
+      <line x1="110" y1="68" x2="55" y2="118" stroke="#6d4c2a" strokeWidth="1" pointerEvents="none"/>
+      <line x1="55" y1="118" x2="110" y2="168" stroke="#6d4c2a" strokeWidth="1" pointerEvents="none"/>
+      <line x1="110" y1="168" x2="220" y2="73" stroke="#fff" strokeWidth="1.5" strokeOpacity="0.7" pointerEvents="none"/>
+      <line x1="110" y1="168" x2="0" y2="73" stroke="#fff" strokeWidth="1.5" strokeOpacity="0.7" pointerEvents="none"/>
+      <polygon points="110,176 116,172 114,166 106,166 104,172" fill="#fff" stroke="#555" strokeWidth=".7" pointerEvents="none"/>
+      {BP.map(([n,cx,cy])=>{
+        const hasRunner=bases&&bases[n-1];
+        const rName=runnerNames&&runnerNames[n-1];
+        const isSel=selectedBase===n;
+        return(
+          <g key={"b"+n} style={{cursor:"pointer"}} onClick={()=>onToggleBase&&onToggleBase(n)}>
+            {isSel&&<rect x={cx-18} y={cy-18} width="36" height="36" fill="none" stroke="#1558c0" strokeWidth="2.5" strokeDasharray="4,2" transform={`rotate(45,${cx},${cy})`} pointerEvents="none"/>}
+            <rect x={cx-14} y={cy-14} width="28" height="28"
+              fill={isSel?"#1558c0":hasRunner?"#f9a825":"#fff"}
+              stroke={isSel?"#fff":hasRunner?"#e65100":"#8d6e3a"}
+              strokeWidth={isSel?2.5:hasRunner?2.5:1.5}
+              transform={`rotate(45,${cx},${cy})`}
+            />
+            {(hasRunner||isSel)&&(
+              <text x={cx} y={cy+1} textAnchor="middle" dominantBaseline="middle" fontFamily="monospace" fontSize="8" fontWeight="bold" fill={isSel?"#fff":"#5d3000"} pointerEvents="none">
+                {(rName||"").slice(0,3)||"?"}
+              </text>
+            )}
+            {!hasRunner&&!isSel&&(
+              <text x={cx} y={cy+1} textAnchor="middle" dominantBaseline="middle" fontFamily="monospace" fontSize="9" fill="#aaa" pointerEvents="none">{n}</text>
+            )}
+          </g>
+        );
+      })}
+      {[["8",110,20,"中堅",16],["7",36,52,"左翼",16],["9",184,52,"右翼",16],["5",26,140,"三塁",13],["6",78,98,"遊撃",13],["4",142,98,"二塁",13],["3",194,140,"一塁",13],["1",110,108,"投手",13],["2",110,158,"捕手",13]].map(([n,cx,cy,lbl,r])=>(
+        <g key={n} style={{cursor:"pointer"}} onClick={()=>onTap(n,`${lbl}(${n})`)}>
+          <circle cx={cx} cy={cy} r={r} style={s(n)}/>
+          <text {...tn} x={cx} y={cy+1} style={{fontSize:14}}>{n}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function PosGrid({selected,onPick,C}){
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:3,marginBottom:8}}>
+      {POSITIONS.map(p=><button key={p} onClick={()=>onPick(p)} style={{padding:"7px 2px",border:`1.5px solid ${selected===p?C.blue:C.border}`,borderRadius:5,background:selected===p?C.blue:"#f8fafc",color:selected===p?"#fff":C.text,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{p}</button>)}
+    </div>
+  );
+}
+
+function AddPlayerForm({onAdd,showToast}){
+  const[name,setName]=useState("");
+  const[pos,setPos]=useState("投");
+  const[num,setNum]=useState("");
+  const fi={flex:1,background:"#fff",border:"2px solid #d0d7e0",borderRadius:8,padding:"8px 10px",color:"#1a2332",fontFamily:"inherit",fontSize:16,outline:"none"};
+  return(
+    <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,marginBottom:0,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+      <div style={{display:"flex",gap:6,marginBottom:6}}>
+        <input style={fi} value={name} onChange={e=>setName(e.target.value)} placeholder="名前" maxLength={8}/>
+        <input style={{...fi,maxWidth:60,textAlign:"center"}} type="number" value={num} onChange={e=>setNum(e.target.value)} placeholder="#"/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:4,marginBottom:6}}>
+        {POSITIONS.map(p=>(
+          <button key={p} onClick={()=>setPos(p)} style={{padding:"7px 2px",border:`2px solid ${pos===p?"#1558c0":"#d0d7e0"}`,borderRadius:6,background:pos===p?"#1558c0":"#f8fafc",color:pos===p?"#fff":"#1a2332",fontFamily:"inherit",fontSize:13,fontWeight:900,cursor:"pointer"}}>{p}</button>
+        ))}
+      </div>
+      <button onClick={()=>{if(!name.trim()){showToast("名前を入力してください");return;}onAdd({name:name.trim(),pos,num});setName("");setNum("");}} style={{width:"100%",background:"#1a7a3a",border:"none",borderRadius:8,padding:10,color:"#fff",fontFamily:"inherit",fontSize:14,fontWeight:900,cursor:"pointer"}}>⚾ 追加</button>
+    </div>
+  );
+}
+
+function ScoreTab({G,C,sec}){
+  const[teamSel,setTeamSel]=useState("us");
+  const isUs=teamSel==="us";
+  const lineup=isUs?G.lineup:G.lineupThem;
+  const sb=isUs?G.scorebook:G.scorebookThem;
+  const OUTP_LOCAL=['K','KS','KR','GO','FO','DP','CS','SF','SH'];
+  return(<>
+    <div style={{display:"flex",gap:6,marginBottom:8}}>
+      <button onClick={()=>setTeamSel("us")} style={{flex:1,padding:"8px 4px",border:`2px solid ${isUs?C.green:C.border}`,borderRadius:8,background:isUs?"#f0faf3":C.bg,color:isUs?C.green:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{G.ourTeam}</button>
+      <button onClick={()=>setTeamSel("them")} style={{flex:1,padding:"8px 4px",border:`2px solid ${!isUs?C.red:C.border}`,borderRadius:8,background:!isUs?"#fff5f5":C.bg,color:!isUs?C.red:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{G.oppTeam}</button>
+    </div>
+    <div style={sec}>スコアブック — {isUs?G.ourTeam:G.oppTeam}</div>
+    <div style={{overflowX:"auto",border:`1.5px solid ${C.border}`,borderRadius:8,marginBottom:8}}>
+      <table style={{borderCollapse:"collapse",minWidth:460,width:"100%",fontSize:10}}>
+        <thead><tr style={{background:C.navy}}>
+          {["打","守","名前",...Array.from({length:Math.max(G.maxInnings,G.inning)},(_,i)=>String(i+1)),"打数","安打","打点"].map((h,i)=>(
+            <th key={i} style={{color:"#ffd740",padding:"4px 5px",textAlign:"center",border:`1px solid ${C.border}`,fontWeight:900,whiteSpace:"nowrap"}}>{h}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {!lineup.length&&<tr><td colSpan={13} style={{padding:14,color:C.gray,textAlign:"center"}}>選手を登録してください</td></tr>}
+          {lineup.map((p,i)=>{
+            const s=(sb||[])[i]||{};
+            const subs=(G.substitutions||[]).filter(sub=>sub.team===teamSel&&sub.playerIdx===i);
+            return(
+            <tr key={i} style={{background:i%2===0?"#f8fafc":C.card}}>
+              <td style={{border:`1px solid ${C.border}`,padding:"3px 4px",textAlign:"center"}}>{i+1}</td>
+              <td style={{border:`1px solid ${C.border}`,padding:"3px 4px",textAlign:"center",fontSize:9,whiteSpace:"pre",lineHeight:1.4}}>
+                <span style={{color:C.gray,fontWeight:700}}>{subs.length>0?(subs[0].oldPos||p.pos):p.pos}</span>
+                {subs.map((sub,si)=>(
+                  <span key={si} style={{display:"block",color:C.blue,fontSize:8}}>→{sub.newPos}<br/><span style={{color:C.gray,fontSize:7}}>{sub.inning}回{sub.isTop?"表":"裏"}</span></span>
+                ))}
+              </td>
+              <td style={{border:`1px solid ${C.border}`,padding:"3px 5px",textAlign:"left",fontWeight:700}}>
+                {subs.filter(s=>s.type==="playerIn").length>0?(
+                  <span>
+                    <span style={{color:C.gray,fontSize:9,textDecoration:"line-through"}}>{subs.find(s=>s.type==="playerIn")?.oldName}</span>
+                    <span style={{display:"block",fontWeight:900}}>{p.name}</span>
+                  </span>
+                ):p.name}
+              </td>
+              {Array.from({length:Math.max(G.maxInnings,G.inning)},(_,idx)=>idx+1).map(inn=>{
+                const tKey=`${inn}T`, bKey=`${inn}B`;
+                const arrT=(s[tKey+"_arr"]||[]);
+                const arrB=(s[bKey+"_arr"]||[]);
+                const allAtBats=[...arrT,...arrB];
+                if(allAtBats.length===0){
+                  const r=s[tKey]||s[bKey]||"";
+                  const note=s[tKey+"_note"]||s[bKey+"_note"]||"";
+                  if(!r)return(<td key={inn} style={{border:`1px solid ${C.border}`,padding:"3px 4px",textAlign:"center",fontSize:9}}></td>);
+                  let d=note||r;
+                  if(d==="BB")d="B";
+                  else if(d==="HBP")d="DB";
+                  else if(d==="KS")d="○K";
+                  else if(d==="KR"||d==="K'")d="K'";
+                  else if(["1B","2B","3B","HR"].includes(d))d="";
+                  if(r==="SH")d="△"+(note&&note!=="SH"?" "+note:"");
+                  if(r==="GO"&&note&&note!=="GO")d=note;
+                  if(r==="FO"&&note&&note!=="FO")d=note;
+                  const col=OUTP_LOCAL.includes(r)?C.red:["1B","2B","3B","HR","FC"].includes(r)?C.green:r==="BB"||r==="HBP"?C.blue:C.text;
+                  return(<td key={inn} style={{border:`1px solid ${C.border}`,padding:"3px 4px",textAlign:"center",color:col,fontSize:9}}>{d}</td>);
+                }
+                const symbols=allAtBats.map(ab=>{
+                  const r=ab.type, note=ab.note;
+                  let d=note||r;
+                  if(d==="BB")d="B";
+                  else if(d==="HBP")d="DB";
+                  else if(d==="KS")d="○K";
+                  else if(d==="KR"||d==="K'")d="K'";
+                  else if(["1B","2B","3B","HR"].includes(d))d="安";
+                  if(r==="SH")d="△";
+                  if(r==="GO"&&note&&note!=="GO")d=note;
+                  if(r==="FO"&&note&&note!=="FO")d=note;
+                  return{d,r};
+                });
+                return(
+                  <td key={inn} style={{border:`1px solid ${C.border}`,padding:"2px 3px",textAlign:"center",fontSize:8,lineHeight:1.3,verticalAlign:"middle"}}>
+                    {symbols.map((s2,si)=>(
+                      <span key={si} style={{color:OUTP_LOCAL.includes(s2.r)?C.red:["1B","2B","3B","HR","FC"].includes(s2.r)?C.green:s2.r==="BB"||s2.r==="HBP"?C.blue:C.text,display:"inline"}}>
+                        {si>0&&<span style={{color:C.gray}}>/</span>}{s2.d}
+                      </span>
+                    ))}
+                  </td>
+                );
+              })}
+              {[p.ab||0,p.hits||0,p.rbi||0].map((v,j)=>(
+                <td key={j} style={{border:`1px solid ${C.border}`,padding:"3px 4px",textAlign:"center",color:j===1?C.green:C.text}}>{v}</td>
+              ))}
+            </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+    <div style={{background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:12,padding:10}}>
+      <div style={{fontSize:9,fontWeight:900,color:C.gold,marginBottom:6}}>イニング別得点</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",fontSize:11}}>
+          <tbody>
+            <tr><td style={{padding:"2px 5px",fontSize:8,color:C.gray}}></td>
+              {Array.from({length:Math.max(G.maxInnings,G.inning)},(_,i)=><td key={i} style={{padding:"2px 5px",textAlign:"center",fontWeight:900,color:C.gold}}>{i+1}</td>)}
+              <td style={{padding:"2px 5px",textAlign:"center",fontWeight:900,color:C.gold,borderLeft:`1px solid ${C.border}`}}>計</td>
+            </tr>
+            {[[G.ourTeam,G.innOur,G.ourScore,C.green],[G.oppTeam,G.innOpp,G.oppScore,C.gray]].map(([team,inn,tot,col])=>(
+              <tr key={String(team)}>
+                <td style={{padding:"3px 5px",fontWeight:900,color:col}}>{team}</td>
+                {Array.from({length:Math.max(G.maxInnings,G.inning)},(_,i)=><td key={i} style={{textAlign:"center",fontWeight:700,color:col}}>{inn[i]!==undefined?inn[i]:"-"}</td>)}
+                <td style={{textAlign:"center",fontSize:16,fontWeight:900,color:col,borderLeft:`1px solid ${C.border}`}}>{tot}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </>);
+}
+
+function LineupTab({G,upd,snap,showToast,C,sec}){
+  const[teamSel,setTeamSel]=useState("us");
+  const[subMode,setSubMode]=useState("sub");
+  const[selBench,setSelBench]=useState(null);
+  const[selShuffleA,setSelShuffleA]=useState(null);
+  const[selShuffleB,setSelShuffleB]=useState(null);
+  const[pendingSub,setPendingSub]=useState(null);
+  const[pendingPos,setPendingPos]=useState(null);
+  const[newPosIn,setNewPosIn]=useState("");
+  const[newPosA,setNewPosA]=useState("");
+  const[newPosB,setNewPosB]=useState("");
+  const[editTarget,setEditTarget]=useState(null);
+  const[deleteTarget,setDeleteTarget]=useState(null);
+  const[showAddLineup,setShowAddLineup]=useState(false);
+  const[showAddBench,setShowAddBench]=useState(false);
+  const[pendingPH,setPendingPH]=useState(null);
+  // ドラッグ並び替え用
+  const[dragIdx,setDragIdx]=useState(null);
+  const[dragOverIdx,setDragOverIdx]=useState(null);
+  const dragStart=useRef(null);
+  const dragItemH=useRef(null);
+
+  const handleDragTouchStart=(e,i)=>{
+    dragStart.current={y:e.touches[0].clientY,idx:i};
+    setDragIdx(i);
+    dragItemH.current=e.currentTarget.getBoundingClientRect().height;
+  };
+  const handleDragTouchMove=(e)=>{
+    if(dragStart.current===null)return;
+    e.preventDefault();
+    const dy=e.touches[0].clientY-dragStart.current.y;
+    const h=dragItemH.current||48;
+    const newOver=Math.max(0,dragStart.current.idx+Math.round(dy/h));
+    setDragOverIdx(newOver);
+  };
+  const handleDragTouchEnd=()=>{
+    if(dragStart.current===null){setDragIdx(null);setDragOverIdx(null);return;}
+    const from=dragStart.current.idx;
+    const to=dragOverIdx!==null?dragOverIdx:from;
+    if(from!==to){
+      snap();
+      upd(g=>{
+        const lu=isUs?g.lineup:g.lineupThem;
+        const sb=isUs?g.scorebook:g.scorebookThem;
+        const [item]=lu.splice(from,1);
+        lu.splice(to,0,item);
+        if(sb){const[si]=sb.splice(from,1);sb.splice(to,0,si);}
+        addLog(g,`📋 打順変更（${from+1}番→${to+1}番 ${item.name}）`,"s");
+      });
+      showToast(`打順変更 ${from+1}→${to+1}番`);
+    }
+    dragStart.current=null;
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+  const[pendingPH,setPendingPH]=useState(null); // {bi,inName,curBatter}
+  const isUs=teamSel==="us";
+  const lineup=isUs?G.lineup:G.lineupThem;
+  const benchArr=isUs?(G.bench||[]):(G.benchThem||[]);
+  const resetSel=()=>{setSelBench(null);setSelShuffleA(null);setSelShuffleB(null);setPendingSub(null);setPendingPos(null);};
+  const changeMode=m=>{resetSel();setSubMode(m);};
+  const doSub=()=>{
+    if(!pendingSub)return;
+    snap();
+    upd(g=>{
+      const lu=isUs?g.lineup:g.lineupThem;
+      if(!g.bench)g.bench=[];if(!g.benchThem)g.benchThem=[];
+      const bu=isUs?g.bench:g.benchThem;
+      const outP=Object.assign({},lu[pendingSub.si]);
+      const inP=Object.assign({},bu[pendingSub.bi]);
+      lu[pendingSub.si]=Object.assign({},inP,{pos:newPosIn,ab:inP.ab||0,hits:inP.hits||0,rbi:inP.rbi||0,runs:inP.runs||0});
+      bu.splice(pendingSub.bi,1);
+      bu.push(Object.assign({},outP,{retired:true}));
+      if(!g.substitutions)g.substitutions=[];
+      g.substitutions.push({inning:g.inning,isTop:g.isTop,team:isUs?"us":"them",type:"playerIn",playerIdx:pendingSub.si,oldName:outP.name,oldPos:outP.pos,newName:inP.name,newPos:newPosIn,newNum:inP.num||""});
+      addLog(g,`⇄ ${inP.name}(${newPosIn}) IN → ${outP.name} OUT`,"s");
+    });
+    showToast(`${pendingSub.inName} IN → ${pendingSub.outName} OUT`);
+    resetSel();
+  };
+  const doPos=()=>{
+    if(!pendingPos)return;
+    snap();
+    upd(g=>{
+      const lu=isUs?g.lineup:g.lineupThem;
+      const oA=lu[pendingPos.ia].pos;const oB=lu[pendingPos.ib].pos;
+      lu[pendingPos.ia].pos=newPosA;lu[pendingPos.ib].pos=newPosB;
+      if(!g.substitutions)g.substitutions=[];
+      g.substitutions.push({inning:g.inning,isTop:g.isTop,team:isUs?"us":"them",type:"posSwap",playerIdx:pendingPos.ia,oldPos:oA,newPos:newPosA,playerName:lu[pendingPos.ia].name,nameB:lu[pendingPos.ib].name,oldPosB:oB,newPosB:newPosB});
+      addLog(g,`↔ ${lu[pendingPos.ia].name} ${oA}→${newPosA} / ${lu[pendingPos.ib].name} ${oB}→${newPosB}`,"s");
+    });
+    showToast("守備交代を記録しました");
+    resetSel();
+  };
+  const card={background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,marginBottom:8};
+  return(
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:8}}>
+        <button onClick={()=>{setTeamSel("us");resetSel();}} style={{flex:1,padding:"9px 4px",border:`2px solid ${isUs?C.green:C.border}`,borderRadius:8,background:isUs?"#f0faf3":C.bg,color:isUs?C.green:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{G.ourTeam}</button>
+        <button onClick={()=>{setTeamSel("them");resetSel();}} style={{flex:1,padding:"9px 4px",border:`2px solid ${!isUs?C.red:C.border}`,borderRadius:8,background:!isUs?"#fff5f5":C.bg,color:!isUs?C.red:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{G.oppTeam}</button>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:8}}>
+        {[["sub","⇄ 選手交代"],["pos","↔ 守備交代"],["log","📋 履歴"]].map(([m,lbl])=>(
+          <button key={m} onClick={()=>changeMode(m)} style={{flex:1,padding:"7px 4px",borderRadius:7,fontSize:10,fontWeight:900,cursor:"pointer",fontFamily:"inherit",border:`1.5px solid ${subMode===m?C.blue:C.border}`,background:subMode===m?C.blue:"#f8fafc",color:subMode===m?"#fff":C.gray}}>{lbl}</button>
+        ))}
+      </div>
+      {deleteTarget&&(
+        <div style={{background:"#fff5f5",border:"1.5px solid #cc2222",borderRadius:12,padding:12,marginBottom:8,textAlign:"center"}}>
+          <div style={{fontSize:13,fontWeight:900,color:C.text,marginBottom:4}}>{deleteTarget.name} を削除しますか？</div>
+          <div style={{fontSize:10,color:C.gray,marginBottom:10}}>この操作は取り消せません</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setDeleteTarget(null)} style={{flex:1,background:"#f0f2f5",border:"none",borderRadius:8,padding:"9px 0",color:C.text,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>キャンセル</button>
+            <button onClick={()=>{upd(g=>{if(deleteTarget.type==="lineup"){const lu=isUs?g.lineup:g.lineupThem;const sb=isUs?g.scorebook:g.scorebookThem;lu.splice(deleteTarget.idx,1);sb.splice(deleteTarget.idx,1);if(isUs&&g.currentBatter>=g.lineup.length)g.currentBatter=Math.max(0,g.lineup.length-1);}else{const bu=isUs?g.bench:g.benchThem;if(bu)bu.splice(deleteTarget.idx,1);}});setDeleteTarget(null);}} style={{flex:1,background:C.red,border:"none",borderRadius:8,padding:"9px 0",color:"#fff",fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>削除</button>
+          </div>
+        </div>
+      )}
+      {editTarget&&(
+        <div style={card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:900,color:C.navy}}>選手を編集</div>
+            <button onClick={()=>setEditTarget(null)} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:C.gray}}>✕</button>
+          </div>
+          <div style={{display:"flex",gap:6,marginBottom:8}}>
+            <input value={editTarget.name} onChange={e=>setEditTarget(m=>({...m,name:e.target.value}))} style={{flex:1,background:"#fff",border:"2px solid #d0d7e0",borderRadius:8,padding:"8px 10px",fontSize:16,outline:"none",fontFamily:"inherit"}} placeholder="名前" maxLength={8}/>
+            <input value={editTarget.num} onChange={e=>setEditTarget(m=>({...m,num:e.target.value}))} type="number" style={{width:70,background:"#fff",border:"2px solid #d0d7e0",borderRadius:8,padding:"8px 6px",fontSize:16,outline:"none",fontFamily:"inherit",textAlign:"center"}} placeholder="#"/>
+          </div>
+          <div style={{fontSize:9,fontWeight:900,color:C.blue,letterSpacing:".1em",marginBottom:5}}>守備位置</div>
+          <PosGrid selected={editTarget.pos} onPick={p=>setEditTarget(m=>({...m,pos:p}))} C={C}/>
+          <button onClick={()=>{if(!editTarget.name.trim()){showToast("名前を入力してください");return;}upd(g=>{const col=editTarget.type==="bench"?(isUs?g.bench:g.benchThem):(isUs?g.lineup:g.lineupThem);if(col)col[editTarget.idx]=Object.assign({},col[editTarget.idx],{name:editTarget.name.trim(),pos:editTarget.pos,num:editTarget.num});});showToast("更新しました");setEditTarget(null);}} style={{width:"100%",background:C.green,border:"none",borderRadius:8,padding:11,color:"#fff",fontFamily:"inherit",fontSize:13,fontWeight:900,cursor:"pointer"}}>💾 保存</button>
+        </div>
+      )}
+      {subMode==="sub"&&(
+        <div>
+          {pendingPH&&(
+            <div style={{background:"#fff8e1",border:`1.5px solid ${C.gold}`,borderRadius:12,padding:12,marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:900,color:C.navy,textAlign:"center",marginBottom:8}}>🏏 代打の確認</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                <div style={{flex:1,background:"#f0faf3",border:`1.5px solid ${C.green}`,borderRadius:8,padding:"8px",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:900,color:C.green,marginBottom:2}}>代打 IN</div>
+                  <div style={{fontSize:13,fontWeight:900,color:C.green}}>{pendingPH.inName}</div>
+                </div>
+                <div style={{fontSize:20,color:C.gray,flexShrink:0}}>→</div>
+                <div style={{flex:1,background:"#fff5f5",border:`1.5px solid ${C.red}`,borderRadius:8,padding:"8px",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:900,color:C.red,marginBottom:2}}>OUT</div>
+                  <div style={{fontSize:13,fontWeight:900,color:C.red}}>{pendingPH.curBatter}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>setPendingPH(null)} style={{flex:1,background:"#f0f2f5",border:"none",borderRadius:7,padding:"9px 0",color:C.text,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>キャンセル</button>
+                <button onClick={()=>{
+                  const {bi}=pendingPH;
+                  snap();
+                  upd(g=>{
+                    const lu=isUs?g.lineup:g.lineupThem;
+                    const bu=isUs?g.bench:g.benchThem;
+                    const cb=isUs?g.currentBatter:(g.currentBatterThem||0);
+                    const outP=Object.assign({},lu[cb]);
+                    const inP=Object.assign({},bu[bi]);
+                    lu[cb]=Object.assign({},inP,{pos:outP.pos,ab:inP.ab||0,hits:inP.hits||0,rbi:inP.rbi||0,runs:inP.runs||0,isPH:true,originalBatter:outP.name});
+                    bu.splice(bi,1);
+                    bu.push(Object.assign({},outP,{retired:true}));
+                    if(!g.substitutions)g.substitutions=[];
+                    g.substitutions.push({inning:g.inning,isTop:g.isTop,team:isUs?"us":"them",type:"pinchHitter",playerIdx:cb,oldName:outP.name,newName:inP.name,newNum:inP.num||""});
+                    addLog(g,`🏏 代打 ${inP.name} → ${outP.name}（${cb+1}番）`,"s");
+                  });
+                  showToast(`代打 ${pendingPH.inName}！`);
+                  setPendingPH(null);
+                  resetSel();
+                }} style={{flex:2,background:C.gold,border:"none",borderRadius:7,padding:"9px 0",color:"#fff",fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>🏏 代打を記録</button>
+              </div>
+            </div>
+          )}
+          {pendingSub&&(
+            <div style={card}>
+              <div style={{fontSize:11,fontWeight:900,color:C.navy,textAlign:"center",marginBottom:8}}>⇄ 選手交代の確認</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                <div style={{flex:1,background:"#f0faf3",border:`1.5px solid ${C.green}`,borderRadius:8,padding:"8px",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:900,color:C.green,marginBottom:2}}>IN</div>
+                  <div style={{fontSize:13,fontWeight:900,color:C.green}}>{pendingSub.inName}</div>
+                </div>
+                <div style={{fontSize:20,color:C.gray,flexShrink:0}}>→</div>
+                <div style={{flex:1,background:"#fff5f5",border:`1.5px solid ${C.red}`,borderRadius:8,padding:"8px",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:900,color:C.red,marginBottom:2}}>OUT</div>
+                  <div style={{fontSize:13,fontWeight:900,color:C.red}}>{pendingSub.outName}</div>
+                  <div style={{fontSize:9,color:"#cc5555"}}>{lineup[pendingSub.si]?lineup[pendingSub.si].pos:""}</div>
+                </div>
+              </div>
+              <div style={{fontSize:9,fontWeight:900,color:C.blue,marginBottom:4}}>{pendingSub.inName} の守備位置</div>
+              <PosGrid selected={newPosIn} onPick={setNewPosIn} C={C}/>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{setPendingSub(null);setSelBench(null);}} style={{flex:1,background:"#f0f2f5",border:"none",borderRadius:7,padding:"9px 0",color:C.text,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>キャンセル</button>
+                <button onClick={doSub} style={{flex:2,background:C.green,border:"none",borderRadius:7,padding:"9px 0",color:"#fff",fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>✓ 交代を記録</button>
+              </div>
+            </div>
+          )}
+          <div style={sec}>▸ スタメン <span style={{fontSize:9,color:C.gray,fontWeight:400}}>（☰ を長押しでドラッグ並び替え）</span></div>
+          <div style={{background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:4}}>
+            {!lineup.length&&<div style={{padding:12,color:C.gray,fontSize:12,textAlign:"center"}}>選手を登録してください</div>}
+            {lineup.map((p,i)=>{
+              const isTgt=pendingSub&&pendingSub.si===i;
+              const isDragging=dragIdx===i;
+              const isDragOver=dragOverIdx===i&&dragIdx!==null&&dragIdx!==i;
+              const bg=isDragging?"#e3f2fd":isTgt?"#fff8e1":selBench!==null?"#f0faf3":"#fff";
+              const bc=isDragging?C.blue:isTgt?"#e65100":selBench!==null?C.green:C.border;
+              return(
+                <div key={i}
+                  onClick={()=>{if(selBench!==null&&!pendingSub){const b=benchArr[selBench];setPendingSub({si:i,bi:selBench,outName:p.name,inName:b.name});setNewPosIn(b.pos);}}}
+                  style={{display:"flex",alignItems:"center",gap:6,padding:"7px 9px",borderBottom:i<lineup.length-1?`1px solid ${C.border}`:"none",background:bg,cursor:selBench!==null?"pointer":"default",borderLeft:`1.5px solid ${bc}`,transition:"background .12s",opacity:isDragging?0.5:1,borderTop:isDragOver?`2px solid ${C.blue}`:"none"}}>
+                  {/* ドラッグハンドル */}
+                  <span
+                    onTouchStart={e=>handleDragTouchStart(e,i)}
+                    onTouchMove={handleDragTouchMove}
+                    onTouchEnd={handleDragTouchEnd}
+                    style={{fontSize:14,color:C.gray,cursor:"grab",padding:"0 2px",touchAction:"none",flexShrink:0,userSelect:"none"}}>☰</span>
+                  <span onClick={e=>{e.stopPropagation();upd(g=>{if(isUs)g.currentBatter=i;else g.currentBatterThem=i;});}} style={{fontWeight:900,color:isUs?C.gold:C.red,fontSize:16,minWidth:22,cursor:"pointer",textAlign:"center"}}>{i+1}</span>
+                  <span style={{fontSize:10,fontWeight:900,background:"#f0f2f5",color:C.gray,borderRadius:4,padding:"2px 5px",flexShrink:0}}>{p.pos}</span>
+                  <span style={{fontSize:13,fontWeight:700,flex:1}}>{p.name}</span>
+                  <span style={{fontSize:9,color:"#9a7a42"}}>#{p.num}</span>
+                  {p.isSub&&<span style={{fontSize:8,background:"#e3f2fd",color:"#0288d1",borderRadius:100,padding:"1px 5px",fontWeight:900,flexShrink:0}}>代走</span>}
+                  {p.isPH&&<span style={{fontSize:8,background:"#fff8e1",color:C.gold,borderRadius:100,padding:"1px 5px",fontWeight:900,flexShrink:0}}>代打</span>}
+                  <button onClick={e=>{e.stopPropagation();setEditTarget({idx:i,isUs,type:"lineup",name:p.name,pos:p.pos,num:p.num||""}); }} style={{background:"#f0f5ff",border:`1px solid ${C.blue}`,borderRadius:5,padding:"3px 7px",color:C.blue,fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>編集</button>
+                  <button onClick={e=>{e.stopPropagation();setDeleteTarget({idx:i,name:p.name,type:"lineup"});}} style={{background:"#fff5f5",border:`1px solid ${C.red}`,borderRadius:5,padding:"3px 6px",color:C.red,fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={()=>setShowAddLineup(v=>!v)} style={{width:"100%",background:showAddLineup?"#e8f0ff":"#f0f5ff",border:`1.5px solid ${C.blue}`,borderRadius:8,padding:"7px 0",color:C.blue,fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer",marginBottom:showAddLineup?4:8}}>{showAddLineup?"▲ 閉じる":"＋ スタメン追加"}</button>
+          {showAddLineup&&<div style={{marginBottom:8}}><AddPlayerForm onAdd={p=>{upd(g=>{if(isUs){g.lineup.push(Object.assign({},p,{ab:0,hits:0,rbi:0,runs:0}));g.scorebook.push({});}else{g.lineupThem.push(Object.assign({},p,{ab:0,hits:0,rbi:0,runs:0}));g.scorebookThem.push({});}});}} showToast={showToast}/></div>}
+          <div style={sec}>▸ 控え</div>
+          <div style={{background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:12,overflow:"hidden",marginBottom:4}}>
+            {!benchArr.length&&<div style={{padding:12,color:C.gray,fontSize:12,textAlign:"center"}}>控え選手なし</div>}
+            {benchArr.map((p,i)=>{
+              if(p.retired){return(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 9px",borderBottom:i<benchArr.length-1?"1px solid #f0d0d0":"none",background:"#fff5f5"}}>
+                  <span style={{fontSize:10,fontWeight:900,color:"#a03030",width:18,textAlign:"center"}}>退</span>
+                  <span style={{fontSize:10,fontWeight:900,background:"#fff0f0",color:"#a03030",borderRadius:4,padding:"2px 5px"}}>{p.pos}</span>
+                  <span style={{fontSize:13,fontWeight:700,flex:1,color:"#a03030",textDecoration:"line-through"}}>{p.name}</span>
+                  <span style={{fontSize:9,background:"#fff0f0",color:"#a03030",borderRadius:100,padding:"1px 6px",fontWeight:700}}>OUT</span>
+                </div>
+              );}
+              const isSel=selBench===i;
+              const isDim=selBench!==null&&!isSel;
+              return(
+                <div key={i} onClick={()=>{if(isSel){setSelBench(null);setPendingSub(null);}else{setSelBench(i);setPendingSub(null);}}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 9px",borderBottom:i<benchArr.length-1?`1px solid ${C.border}`:"none",background:isSel?"#E6F1FB":"#f8fafc",opacity:isDim?0.45:1,cursor:"pointer",borderLeft:`${isSel?"2px":"1.5px"} solid ${isSel?"#378ADD":C.border}`,transition:"background .12s"}}>
+                  <span style={{fontSize:10,fontWeight:900,color:C.gray,width:18,textAlign:"center"}}>控</span>
+                  <span style={{fontSize:10,fontWeight:900,background:"#f0f2f5",color:C.gray,borderRadius:4,padding:"2px 5px"}}>{p.pos}</span>
+                  <span style={{fontSize:13,fontWeight:700,flex:1}}>{p.name}</span>
+                  <span style={{fontSize:9,color:"#9a7a42"}}>#{p.num}</span>
+                  <button onClick={e=>{e.stopPropagation();const cb=isUs?G.currentBatter:(G.currentBatterThem||0);const curName=(isUs?G.lineup:G.lineupThem)[cb]?.name||"打者";setPendingPH({bi:i,inName:p.name,curBatter:curName});}} style={{background:"#fff8e1",border:`1px solid ${C.gold}`,borderRadius:5,padding:"3px 6px",color:C.gold,fontFamily:"inherit",fontSize:9,fontWeight:900,cursor:"pointer",whiteSpace:"nowrap"}}>代打</button>
+                  <button onClick={e=>{e.stopPropagation();snap();upd(g=>{const lu=isUs?g.lineup:g.lineupThem;const bu=isUs?g.bench:g.benchThem;if(!g.runnerNames)g.runnerNames=[null,null,null];const runnerBase=g.runnerNames.findIndex(r=>r!==null);if(runnerBase<0){showToast("塁上に走者がいません");return;}const rnLabel=g.runnerNames[runnerBase];const outIdx=lu.findIndex(pl=>{const lbl=pl.num?"#"+pl.num:pl.name.slice(0,3);return lbl===rnLabel||pl.name.slice(0,3)===rnLabel;});if(outIdx<0){showToast("走者の選手が特定できません");return;}const outP=Object.assign({},lu[outIdx]);const inP=Object.assign({},bu[i]);lu[outIdx]=Object.assign({},inP,{pos:outP.pos,ab:inP.ab||0,hits:inP.hits||0,rbi:inP.rbi||0,runs:inP.runs||0,isSub:true,originalBatter:outP.name});bu.splice(i,1);bu.push(Object.assign({},outP,{retired:true}));const newLbl=inP.num?"#"+inP.num:inP.name.slice(0,3);g.runnerNames[runnerBase]=newLbl;if(!g.substitutions)g.substitutions=[];g.substitutions.push({inning:g.inning,isTop:g.isTop,team:isUs?"us":"them",type:"pinchRunner",playerIdx:outIdx,runnerBase:runnerBase+1,newName:inP.name,oldName:outP.name,newNum:inP.num||""});addLog(g,`💨 代走 ${inP.name} → ${outP.name}（${["一","二","三"][runnerBase]}塁）`,"b");showToast(`代走 ${inP.name}！`);});}} style={{background:"#e3f2fd",border:`1px solid #0288d1`,borderRadius:5,padding:"3px 6px",color:"#0288d1",fontFamily:"inherit",fontSize:9,fontWeight:900,cursor:"pointer",whiteSpace:"nowrap"}}>代走</button>
+                  <button onClick={e=>{e.stopPropagation();setEditTarget({idx:i,isUs,type:"bench",name:p.name,pos:p.pos,num:p.num||""});}} style={{background:"#f0f5ff",border:`1px solid ${C.blue}`,borderRadius:5,padding:"3px 7px",color:C.blue,fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>編集</button>
+                  <button onClick={e=>{e.stopPropagation();setDeleteTarget({idx:i,name:p.name,type:"bench"});}} style={{background:"#fff5f5",border:`1px solid ${C.red}`,borderRadius:5,padding:"3px 6px",color:C.red,fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={()=>setShowAddBench(v=>!v)} style={{width:"100%",background:showAddBench?"#e8f0ff":"#f0f5ff",border:`1.5px solid ${C.blue}`,borderRadius:8,padding:"7px 0",color:C.blue,fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer",marginBottom:showAddBench?4:8}}>{showAddBench?"▲ 閉じる":"＋ 控え追加"}</button>
+          {showAddBench&&<div style={{marginBottom:8}}><AddPlayerForm onAdd={p=>{upd(g=>{if(!g.bench)g.bench=[];if(!g.benchThem)g.benchThem=[];if(isUs)g.bench.push(Object.assign({},p,{ab:0,hits:0,rbi:0,runs:0,retired:false}));else g.benchThem.push(Object.assign({},p,{ab:0,hits:0,rbi:0,runs:0,retired:false}));});}} showToast={showToast}/></div>}
+          <button onClick={()=>upd(g=>{if(isUs){g.lineup=[];g.bench=[];g.scorebook=[];g.currentBatter=0;}else{g.lineupThem=[];g.benchThem=[];g.scorebookThem=[];g.currentBatterThem=0;}})} style={{width:"100%",background:C.red,border:"none",borderRadius:8,padding:9,color:"#fff",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer",marginTop:4}}>{isUs?G.ourTeam:G.oppTeam} をリセット</button>
+        </div>
+      )}
+      {subMode==="pos"&&(
+        <div>
+          {pendingPos&&(
+            <div style={card}>
+              <div style={{fontSize:11,fontWeight:900,color:C.navy,textAlign:"center",marginBottom:8}}>↔ 守備交代の確認</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+                <div style={{flex:1,background:"#f0f5ff",border:`1.5px solid ${C.blue}`,borderRadius:8,padding:"7px 6px",textAlign:"center"}}>
+                  <div style={{fontSize:13,fontWeight:900,color:"#0C447C",marginBottom:2}}>{lineup[pendingPos.ia]?lineup[pendingPos.ia].name:""}</div>
+                  <div style={{fontSize:9,color:"#185FA5",marginBottom:4}}>{lineup[pendingPos.ia]?lineup[pendingPos.ia].pos:""} →</div>
+                  <PosGrid selected={newPosA} onPick={setNewPosA} C={C}/>
+                </div>
+                <div style={{fontSize:20,color:C.gray,flexShrink:0}}>↔</div>
+                <div style={{flex:1,background:"#f0f5ff",border:`1.5px solid ${C.blue}`,borderRadius:8,padding:"7px 6px",textAlign:"center"}}>
+                  <div style={{fontSize:13,fontWeight:900,color:"#0C447C",marginBottom:2}}>{lineup[pendingPos.ib]?lineup[pendingPos.ib].name:""}</div>
+                  <div style={{fontSize:9,color:"#185FA5",marginBottom:4}}>{lineup[pendingPos.ib]?lineup[pendingPos.ib].pos:""} →</div>
+                  <PosGrid selected={newPosB} onPick={setNewPosB} C={C}/>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{setPendingPos(null);setSelShuffleA(null);setSelShuffleB(null);}} style={{flex:1,background:"#f0f2f5",border:"none",borderRadius:7,padding:"9px 0",color:C.text,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>キャンセル</button>
+                <button onClick={doPos} style={{flex:2,background:C.blue,border:"none",borderRadius:7,padding:"9px 0",color:"#fff",fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>✓ 守備交代を記録</button>
+              </div>
+            </div>
+          )}
+          <div style={{fontSize:10,color:C.blue,fontWeight:700,marginBottom:6,textAlign:"center"}}>守備位置を変えたい選手をタップ → 交換先をタップ</div>
+          <div style={{background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+            {!lineup.length&&<div style={{padding:12,color:C.gray,fontSize:12,textAlign:"center"}}>スタメンを登録してください</div>}
+            {lineup.map((p,i)=>{
+              const isA=selShuffleA===i;const isB=selShuffleB===i;
+              const bg=isA?"#E6F1FB":isB?"#fff8e1":selShuffleA!==null?"#f0faf3":"#fff";
+              const bc=isA?"#378ADD":isB?"#e65100":selShuffleA!==null?C.green:C.border;
+              return(
+                <div key={i} onClick={()=>{if(pendingPos)return;if(selShuffleA===null){setSelShuffleA(i);setSelShuffleB(null);}else if(selShuffleA===i){setSelShuffleA(null);setSelShuffleB(null);}else{setSelShuffleB(i);setPendingPos({ia:selShuffleA,ib:i});setNewPosA(lineup[selShuffleA].pos);setNewPosB(lineup[i].pos);}}} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 9px",borderBottom:i<lineup.length-1?`1px solid ${C.border}`:"none",background:bg,cursor:"pointer",borderLeft:`1.5px solid ${bc}`,transition:"background .12s"}}>
+                  <span style={{fontWeight:900,color:isUs?C.gold:C.red,fontSize:14,minWidth:18,textAlign:"center"}}>{i+1}</span>
+                  <span style={{fontSize:10,fontWeight:900,background:"#f0f2f5",color:C.gray,borderRadius:4,padding:"2px 5px"}}>{p.pos}</span>
+                  <span style={{fontSize:13,fontWeight:700,flex:1}}>{p.name}</span>
+                  {isA&&<span style={{fontSize:9,color:"#378ADD",fontWeight:900}}>①</span>}
+                  {isB&&<span style={{fontSize:9,color:"#e65100",fontWeight:900}}>②</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {subMode==="log"&&(
+        <div>
+          <div style={{background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:12,overflow:"hidden"}}>
+            {!(G.substitutions||[]).filter(s=>s.team===(isUs?"us":"them")).length&&(<div style={{padding:12,color:C.gray,fontSize:12,textAlign:"center"}}>交代記録なし</div>)}
+            {(G.substitutions||[]).filter(s=>s.team===(isUs?"us":"them")).map((s,i)=>{
+              const msg=s.type==="playerIn"?(`${s.newName}(${s.newPos}) IN → ${s.oldName} OUT`):s.type==="posSwap"?(`${s.playerName} ${s.oldPos}→${s.newPos} / ${s.nameB} ${s.oldPosB}→${s.newPosB}`):s.type==="pinchRunner"?(`💨 代走 ${s.newName} → ${s.oldName}（${s.runnerBase}塁）`):s.type==="pinchHitter"?(`🏏 代打 ${s.newName} → ${s.oldName}（${(s.playerIdx||0)+1}番）`):`${s.playerName} ${s.oldPos}→${s.newPos}`;
+              return(<div key={i} style={{display:"flex",gap:6,padding:"7px 10px",borderBottom:`1px solid ${C.border}`,fontSize:11}}><span style={{fontSize:9,color:C.gold,flexShrink:0,marginTop:1}}>{s.inning}回{s.isTop?"表":"裏"}</span><span style={{flex:1,color:C.text}}>{msg}</span></div>);
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistCard({h,onDelete}){
+  const[open,setOpen]=useState(false);
+  const winner=h.ourScore>h.oppScore?h.ourTeam:h.ourScore<h.oppScore?h.oppTeam:"引き分け";
+  return(
+    <div style={{background:"#0d1e3a",border:"1px solid rgba(255,255,255,.12)",borderRadius:12,marginBottom:8,overflow:"hidden"}}>
+      {/* ヘッダー */}
+      <div style={{padding:"10px 12px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.45)",marginBottom:2}}>{h.gameDate||"日付未設定"}{h.gameLocation?" · "+h.gameLocation:""}{h.gameStartTime?" "+h.gameStartTime:""}</div>
+            <div style={{fontSize:13,fontWeight:900,color:"#fff"}}>{h.ourTeam} <span style={{color:"rgba(255,255,255,.35)"}}>vs</span> {h.oppTeam}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontSize:24,fontWeight:900,color:"#ffd740",lineHeight:1}}>{h.ourScore} - {h.oppScore}</div>
+            <div style={{fontSize:9,fontWeight:900,color:winner==="引き分け"?"#aaa":"#7ec8ff",marginTop:2}}>{winner==="引き分け"?"引き分け":"⚾ "+winner+" 勝利"}</div>
+          </div>
+        </div>
+        {/* イニング得点 */}
+        <div style={{overflowX:"auto",marginTop:8}}>
+          <table style={{borderCollapse:"collapse",minWidth:180}}>
+            <tbody>
+              {[[h.ourTeam,h.innOur||[]],[h.oppTeam,h.innOpp||[]]].map(function(row,ri){
+                var team=row[0];var inn=row[1];
+                return(
+                  <tr key={ri}>
+                    <td style={{fontSize:8,color:"rgba(255,255,255,.5)",padding:"2px 8px 2px 0",whiteSpace:"nowrap",fontWeight:700}}>{team}</td>
+                    {Array.from({length:Math.max(h.maxInnings||7,inn.length)},function(_,j){
+                      return(<td key={j} style={{fontSize:10,textAlign:"center",padding:"2px 4px",color:inn[j]>0?"#ffd740":"rgba(255,255,255,.25)",fontWeight:inn[j]>0?900:400,minWidth:16}}>{inn[j]!==undefined?inn[j]:"-"}</td>);
+                    })}
+                    <td style={{fontSize:12,fontWeight:900,padding:"2px 0 2px 10px",borderLeft:"1px solid rgba(255,255,255,.15)",color:ri===0?h.ourScore>h.oppScore?"#ffd740":"#fff":h.oppScore>h.ourScore?"#ffd740":"#fff"}}>{ri===0?h.ourScore:h.oppScore}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {/* 展開・削除 */}
+      <div style={{display:"flex",gap:0}}>
+        <button onClick={()=>setOpen(function(v){return !v;})} style={{flex:1,padding:"8px 0",background:"transparent",border:"none",color:"rgba(255,255,255,.55)",fontFamily:"inherit",fontSize:10,fontWeight:700,cursor:"pointer",borderRight:onDelete?"1px solid rgba(255,255,255,.08)":"none"}}>{open?"▲ 閉じる":"▼ 打者成績 / ログ"}</button>
+        {onDelete&&<button onClick={onDelete} style={{padding:"8px 14px",background:"transparent",border:"none",color:"rgba(255,100,100,.7)",fontFamily:"inherit",fontSize:10,fontWeight:700,cursor:"pointer"}}>🗑</button>}
+      </div>
+      {open&&(
+        <div style={{padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,.08)"}}>
+          {/* 打者成績 両チーム */}
+          {[h.ourTeam,h.oppTeam].map(function(team,ti){
+            var lu=ti===0?(h.lineup||[]):(h.lineupThem||[]);
+            if(!lu.length)return null;
+            return(
+              <div key={ti} style={{marginBottom:10}}>
+                <div style={{fontSize:9,fontWeight:900,color:"#ffd740",marginBottom:4}}>{team}</div>
+                <table style={{borderCollapse:"collapse",width:"100%",fontSize:9}}>
+                  <thead>
+                    <tr>{["打","名前","打数","安打","打点"].map(function(h2){return(<th key={h2} style={{color:"rgba(255,255,255,.4)",fontWeight:700,padding:"2px 4px",textAlign:"center",borderBottom:"1px solid rgba(255,255,255,.1)"}}>{h2}</th>);})}</tr>
+                  </thead>
+                  <tbody>
+                    {lu.map(function(p,pi){return(
+                      <tr key={pi}>
+                        <td style={{textAlign:"center",color:"rgba(255,255,255,.4)",padding:"2px 4px"}}>{pi+1}</td>
+                        <td style={{color:"#fff",padding:"2px 6px",fontWeight:700}}>{p.name}</td>
+                        <td style={{textAlign:"center",color:"rgba(255,255,255,.6)",padding:"2px 4px"}}>{p.ab||0}</td>
+                        <td style={{textAlign:"center",color:"#7ec8ff",padding:"2px 4px",fontWeight:p.hits>0?900:400}}>{p.hits||0}</td>
+                        <td style={{textAlign:"center",color:"#ffd740",padding:"2px 4px",fontWeight:p.rbi>0?900:400}}>{p.rbi||0}</td>
+                      </tr>
+                    );})}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+          {/* 速報ログ */}
+          {(h.log||[]).length>0&&(
+            <div>
+              <div style={{fontSize:9,fontWeight:900,color:"rgba(255,255,255,.45)",marginBottom:4}}>速報ログ</div>
+              <div style={{maxHeight:150,overflowY:"auto"}}>
+                {(h.log||[]).map(function(entry,li){return(
+                  <div key={li} style={{display:"flex",gap:6,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,.05)"}}>
+                    <span style={{fontSize:7,color:"rgba(255,255,255,.25)",flexShrink:0,marginTop:1}}>{entry.t||""}</span>
+                    <span style={{fontSize:10,color:entry.type==="r"?"#ffd740":entry.type==="o"?"#ff8888":entry.type==="b"?"#7ec8ff":"rgba(255,255,255,.75)"}}>{entry.msg||""}</span>
+                  </div>
+                );})}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryTab(){
+  const[hist,setHist]=useState(function(){try{return JSON.parse(localStorage.getItem("yakyu_history")||"[]");}catch(e){return [];}});
+  const deleteOne=(id)=>{const next=hist.filter(function(h){return h.id!==id;});setHist(next);try{localStorage.setItem("yakyu_history",JSON.stringify(next));}catch(e){}};
+  const deleteAll=()=>{setHist([]);try{localStorage.removeItem("yakyu_history");}catch(e){}};
+  return(
+    <div style={{background:"#0a1628",minHeight:"100%",padding:"10px 8px",borderRadius:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:900,color:"#ffd740"}}>📚 過去の試合</div>
+        <button onClick={()=>{try{setHist(JSON.parse(localStorage.getItem("yakyu_history")||"[]"));}catch(e){setHist([]);}}} style={{background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",borderRadius:6,padding:"3px 8px",color:"rgba(255,255,255,.7)",fontFamily:"inherit",fontSize:10,fontWeight:700,cursor:"pointer"}}>更新</button>
+      </div>
+      {!hist.length&&<div style={{textAlign:"center",color:"rgba(255,255,255,.35)",fontSize:12,padding:"32px 0"}}>保存された試合はありません<br/><span style={{fontSize:10,marginTop:4,display:"block"}}>試合終了ボタンを押すと自動保存されます</span></div>}
+      {hist.map(function(h){return(<HistCard key={h.id} h={h} onDelete={function(){deleteOne(h.id);}}/>);})}
+      {hist.length>0&&(
+        <button onClick={deleteAll} style={{width:"100%",background:"transparent",border:"1px solid rgba(255,100,100,.4)",borderRadius:8,padding:8,color:"rgba(255,120,120,.8)",fontFamily:"inherit",fontSize:10,fontWeight:700,cursor:"pointer",marginTop:4}}>全履歴を削除</button>
+      )}
+    </div>
+  );
+}
+
+function ConfigPanel({G,upd,showToast,snap}){
+  const[our,setOur]=useState(G.ourTeam);
+  const[opp,setOpp]=useState(G.oppTeam);
+  const[inn,setInn]=useState(G.maxInnings);
+  const[bf,setBf]=useState(G.batFirst);
+  const[tb,setTb]=useState(G.tieBreak||false);
+  const[tbStart,setTbStart]=useState(G.tieBreakStart||8);
+  const[cold,setCold]=useState(G.coldGame||false);
+  const[coldDiff,setColdDiff]=useState(G.coldDiff||10);
+  const[coldInn,setColdInn]=useState(G.coldInning||3);
+  const[maxEx,setMaxEx]=useState(G.maxExtraInnings||2);
+  const[gameDate,setGameDate]=useState(G.gameDate||"");
+  const[gameLocation,setGameLocation]=useState(G.gameLocation||"");
+  const[gameStartTime,setGameStartTime]=useState(G.gameStartTime||"");
+  const[endSheet,setEndSheet]=useState(false);
+  const fi={background:"#fff",border:"2px solid #d0d7e0",borderRadius:8,padding:"5px 9px",color:"#1a2332",fontFamily:"inherit",fontSize:16,outline:"none",width:115,textAlign:"right"};
+  const fiW={...fi,width:160,textAlign:"left"};
+  const row=(ico,lbl,child)=>(<div style={{display:"flex",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #d0d7e0",gap:8}}><span style={{fontSize:18}}>{ico}</span><span style={{flex:1,fontSize:13,fontWeight:700}}>{lbl}</span>{child}</div>);
+  const tog=(val,setVal)=>(<button onClick={()=>setVal(v=>!v)} style={{background:val?"#1a7a3a":"#f0f2f5",border:`2px solid ${val?"#1a7a3a":"#b0bbc8"}`,borderRadius:100,padding:"4px 12px",color:val?"#fff":"#6b7a8d",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer",minWidth:52}}>{val?"ON":"OFF"}</button>);
+  return(
+    <div>
+      {/* ━━ 試合情報 ━━ */}
+      <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:8}}>
+        <div style={{fontSize:9,fontWeight:900,color:C.gold,letterSpacing:".1em",marginBottom:6}}>📅 試合情報</div>
+        {[["📅","日付",gameDate,setGameDate,"date"],["📍","場所",gameLocation,setGameLocation,"text"],["🕐","開始時間",gameStartTime,setGameStartTime,"time"]].map(([ico,lbl,val,set,type])=>(
+          <div key={lbl} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #d0d7e0",gap:8}}>
+            <span style={{fontSize:18}}>{ico}</span><span style={{flex:1,fontSize:13,fontWeight:700}}>{lbl}</span>
+            <input type={type} value={val} onChange={e=>set(e.target.value)} style={fiW}/>
+          </div>
+        ))}
+      </div>
+      {/* ━━ 基本設定 ━━ */}
+      <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:8}}>
+        <div style={{fontSize:9,fontWeight:900,color:C.gold,letterSpacing:".1em",marginBottom:6}}>基本設定</div>
+        {[["🏟","自分のチーム名",our,setOur,"text"],["⚔️","相手チーム名",opp,setOpp,"text"]].map(([ico,lbl,val,set,type])=>(
+          <div key={lbl} style={{display:"flex",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #d0d7e0",gap:8}}>
+            <span style={{fontSize:18}}>{ico}</span><span style={{flex:1,fontSize:13,fontWeight:700}}>{lbl}</span>
+            <input type={type} value={val} onChange={e=>set(e.target.value)} style={fi}/>
+          </div>
+        ))}
+        {row("🔢","イニング数",<select value={inn} onChange={e=>setInn(Number(e.target.value))} style={fi}>{[5,6,7,9].map(n=><option key={n} value={n}>{n}回</option>)}</select>)}
+        <div style={{display:"flex",alignItems:"center",padding:"10px 0",gap:8}}>
+          <span style={{fontSize:18}}>🏠</span><span style={{flex:1,fontSize:13,fontWeight:700}}>先攻/後攻</span>
+          <button onClick={()=>setBf(b=>!b)} style={{background:bf?"#1a7a3a":"#f0f2f5",border:`2px solid ${bf?"#1a7a3a":"#b0bbc8"}`,borderRadius:100,padding:"4px 12px",color:bf?"#fff":"#6b7a8d",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer"}}>{bf?"先攻":"後攻"}</button>
+        </div>
+      </div>
+      <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:8}}>
+        <div style={{fontSize:9,fontWeight:900,color:C.gold,letterSpacing:".1em",marginBottom:8}}>⚾ 投手球数管理</div>
+        {[["us",G.ourTeam,G.lineup],["them",G.oppTeam,G.lineupThem]].map(([side,teamName,lu])=>{
+          const pitchers=[...lu,...(side==="us"?(G.bench||[]):(G.benchThem||[]))].filter(p=>p.pitchCount>0||(p.pos==="投"||p.pos==="1"));
+          return(
+            <div key={side} style={{marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:900,color:side==="us"?C.green:C.red,marginBottom:4}}>{teamName}</div>
+              {pitchers.length===0&&<div style={{fontSize:10,color:C.gray,paddingBottom:4}}>投球なし</div>}
+              {pitchers.map((p,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:"1px solid #f0f2f5"}}>
+                  <span style={{fontSize:11,fontWeight:900,background:"#f0f2f5",color:C.gray,borderRadius:4,padding:"1px 5px"}}>{p.pos}</span>
+                  <span style={{fontSize:12,fontWeight:700,flex:1}}>{p.name}</span>
+                  <span style={{fontSize:9,color:C.gray}}>#{p.num}</span>
+                  <span style={{fontSize:14,fontWeight:900,color:C.navy,minWidth:40,textAlign:"right"}}>{p.pitchCount||0}球</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+        <div style={{display:"flex",gap:8,padding:"6px 0",fontSize:11,color:C.gray,borderTop:"1px solid #f0f2f5",marginTop:4}}>
+          <span>自分のチーム計: <strong style={{color:C.navy}}>{G.pitchCount||0}球</strong></span>
+          <span>相手計: <strong style={{color:C.navy}}>{G.pitchCountThem||0}球</strong></span>
+          <button onClick={()=>upd(g=>{g.pitchCount=0;g.pitchCountThem=0;g.pitchLog=[];[...g.lineup,...(g.bench||[]),...g.lineupThem,...(g.benchThem||[])].forEach(p=>{p.pitchCount=0;});})} style={{marginLeft:"auto",background:"#fff5f5",border:"1px solid #cc2222",borderRadius:5,padding:"2px 8px",color:"#cc2222",fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>全リセット</button>
+        </div>
+      </div>
+      <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:8}}>
+        <div style={{fontSize:9,fontWeight:900,color:C.gold,letterSpacing:".1em",marginBottom:6}}>⚡ タイブレーク設定</div>
+        {row("⚡","タイブレーク",tog(tb,setTb))}
+        {tb&&row("🔢","開始イニング",<select value={tbStart} onChange={e=>setTbStart(Number(e.target.value))} style={fi}>{[7,8,9,10].map(n=><option key={n} value={n}>{n}回から</option>)}</select>)}
+      </div>
+      <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:8}}>
+        <div style={{fontSize:9,fontWeight:900,color:C.gold,letterSpacing:".1em",marginBottom:6}}>⏱ 延長打ち切り設定</div>
+        {row("⏱","最大延長イニング数",<select value={maxEx} onChange={e=>setMaxEx(Number(e.target.value))} style={fi}>{[0,1,2,3].map(n=><option key={n} value={n}>{n===0?"延長なし":`最大${n}イニング`}</option>)}</select>)}
+        <div style={{fontSize:10,color:C.gray,marginTop:4}}>同点のまま超えたら引き分け・抽選（くじ引き）</div>
+      </div>
+      <div style={{background:"#fff",border:"1.5px solid #d0d7e0",borderRadius:12,padding:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:8}}>
+        <div style={{fontSize:9,fontWeight:900,color:C.gold,letterSpacing:".1em",marginBottom:6}}>🏁 コールドゲーム設定</div>
+        {row("🏁","コールドゲーム",tog(cold,setCold))}
+        {cold&&<>
+          {row("📊","コールド点差",<select value={coldDiff} onChange={e=>setColdDiff(Number(e.target.value))} style={fi}>{[5,7,8,10,15].map(n=><option key={n} value={n}>{n}点差</option>)}</select>)}
+          {row("🔢","適用開始イニング",<select value={coldInn} onChange={e=>setColdInn(Number(e.target.value))} style={fi}>{[3,4,5].map(n=><option key={n} value={n}>{n}回以降</option>)}</select>)}
+        </>}
+      </div>
+      <button onClick={()=>{upd(g=>{g.ourTeam=our;g.oppTeam=opp;g.maxInnings=inn;g.batFirst=bf;g.tieBreak=tb;g.tieBreakStart=tbStart;g.coldGame=cold;g.coldDiff=coldDiff;g.coldInning=coldInn;g.maxExtraInnings=maxEx;g.gameDate=gameDate;g.gameLocation=gameLocation;g.gameStartTime=gameStartTime;});showToast("設定を保存");}} style={{width:"100%",background:"#1a7a3a",border:"none",borderRadius:8,padding:10,color:"#fff",fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer",marginTop:4}}>💾 設定を保存</button>
+      <div style={{display:"flex",gap:6,marginTop:6}}>
+        <button onClick={()=>{upd(g=>{
+          const resetPlayer=p=>Object.assign({},p,{ab:0,hits:0,rbi:0,runs:0,retired:false,isSub:false});
+          const savedLineup=(g.lineup||[]).map(resetPlayer);
+          const savedBench=(g.bench||[]).filter(b=>!b.retired).map(resetPlayer);
+          const savedLineupThem=(g.lineupThem||[]).map(resetPlayer);
+          const savedBenchThem=(g.benchThem||[]).filter(b=>!b.retired).map(resetPlayer);
+          g.inning=1;g.isTop=true;g.balls=0;g.strikes=0;g.outs=0;
+          g.bases=[false,false,false];g.runnerNames=[null,null,null];
+          g.ourScore=0;g.oppScore=0;g.innOur=[];g.innOpp=[];
+          g.currentBatter=0;g.currentBatterThem=0;
+          g.substitutions=[];g.log=[];g.events=[];
+          g.pitchCount=0;g.pitchCountThem=0;g.pitchLog=[];
+          g.gameOver=false;g.gameStartTime="";
+          g.lineup=savedLineup;g.bench=savedBench;
+          g.lineupThem=savedLineupThem;g.benchThem=savedBenchThem;
+          g.scorebook=savedLineup.map(()=>({}));
+          g.scorebookThem=savedLineupThem.map(()=>({}));
+        });showToast("🆕 新試合を開始");}} style={{flex:1,background:"#cc2222",border:"none",borderRadius:8,padding:10,color:"#fff",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer"}}>🔄 新しい試合を開始</button>
+        <button onClick={()=>setEndSheet(true)} style={{flex:1,background:"#37474f",border:"none",borderRadius:8,padding:10,color:"#fff",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer"}}>🏁 試合終了</button>
+      </div>
+      {endSheet&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"#fff",borderRadius:"16px 16px 0 0",padding:"12px 10px 28px",width:"100%",maxWidth:480}}>
+            <div style={{background:"#37474f",borderRadius:8,padding:"8px 12px",marginBottom:10,position:"relative"}}>
+              <div style={{fontSize:13,fontWeight:900,color:"#fff",textAlign:"center"}}>🏁 試合終了 — 理由を選択</div>
+              <button onClick={()=>setEndSheet(false)} style={{position:"absolute",top:6,right:8,background:"none",border:"none",color:"rgba(255,255,255,.7)",fontSize:18,fontWeight:900,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
+            </div>
+            {[
+              ["⏱","時間制限終了","捕球捕球","#e3f2fd","#1558c0"],
+              ["🌧","雨天中止","悪天候のため試合中止","#e8f5e9","#2e7d32"],
+              ["🌩","雷・荒天","危険な天候のため試合中止","#fff8e1","#f57f17"],
+              ["💡","コールド成立","点差によるコールドゲーム","#fff3e0","#e65100"],
+              ["📋","その他","その他の理由で試合終了","#f3e5f5","#6a1a8a"],
+            ].map(([ico,title,desc,bg,col])=>(
+              <button key={title} onClick={()=>{
+                setEndSheet(false);
+                snap();upd(g=>{g.gameOver=true;addLog(g,`🏁 試合終了（${title}）`,"r");});
+                showToast(`🏁 ${title}`);
+              }} style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:bg,border:`2.5px solid ${col}`,borderRadius:10,padding:"10px 12px",cursor:"pointer",fontFamily:"inherit",marginBottom:6,textAlign:"left"}}>
+                <span style={{fontSize:22,flexShrink:0}}>{ico}</span>
+                <div>
+                  <div style={{fontSize:13,fontWeight:900,color:col}}>{title}</div>
+                  <div style={{fontSize:9,color:"#6b7a8d",marginTop:1}}>{desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button onClick={()=>{upd(()=>cp(INIT_G));showToast("🗑 データを全消去しました");}} style={{width:"100%",background:"#f0f2f5",border:"1.5px solid #cc2222",borderRadius:8,padding:9,color:"#cc2222",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer",marginTop:6}}>🗑 全データをリセット（初期化）</button>
+    </div>
+  );
+}
+
+
+function App(){
+  const isViewerOnly=typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("viewer")==="1";
+  const[screen,setScreen]=useState("select");
+  const[tab,setTab]=useState("live");
+  const[menuSheet,setMenuSheet]=useState(false);
+  const[correctSheet,setCorrectSheet]=useState(false);
+  const [G, setGLocal, pushG, connected] = useFirebaseSync(cp(INIT_G));
+  const setG = setGLocal;
+  const[toast,setToast]=useState(null);
+  const[pi,setPi]=useState({fielder:null,mod:null,traj:null,throws:[],buntType:null,errorType:null});
+  const[furinige,setFurinige]=useState(null);
+  const[strikePick,setStrikePick]=useState(false);
+  const[runnerSheet,setRunnerSheet]=useState(null);
+  const[rundownNote,setRundownNote]=useState("");
+  const[buntSheet,setBuntSheet]=useState(false);
+  const[errorSheet,setErrorSheet]=useState(false);
+  const[foulFlash,setFoulFlash]=useState(false);
+  const[otherSheet,setOtherSheet]=useState(false);
+  const[sfSheet,setSfSheet]=useState(false);
+  const snaps=useRef([]);
+  const[elapsed,setElapsed]=useState("");
+  useEffect(()=>{
+    const calc=()=>{
+      if(!G.gameStartTime||G.gameOver){setElapsed("");return;}
+      const today=G.gameDate||new Date().toISOString().slice(0,10);
+      const start=new Date(`${today}T${G.gameStartTime}`);
+      const diff=Math.floor((Date.now()-start.getTime())/60000);
+      if(diff<0){setElapsed("");return;}
+      setElapsed(`${diff}分経過`);
+    };
+    calc();
+    const t=setInterval(calc,30000);
+    return()=>clearInterval(t);
+  },[G.gameStartTime,G.gameDate,G.gameOver]);
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2500);};
+  const snap=()=>snaps.current.push(cp(G));
+  const undoAction=()=>{if(!snaps.current.length){showToast("戻せません");return;}setG(snaps.current.pop());showToast("↩ 戻しました");};
+  const saveHistory=(g)=>{
+    try{
+      const hist=JSON.parse(localStorage.getItem("yakyu_history")||"[]");
+      const entry={
+        id:Date.now().toString(),
+        savedAt:new Date().toISOString(),
+        gameDate:g.gameDate||"",
+        gameLocation:g.gameLocation||"",
+        gameStartTime:g.gameStartTime||"",
+        ourTeam:g.ourTeam,oppTeam:g.oppTeam,
+        ourScore:g.ourScore,oppScore:g.oppScore,
+        inning:g.inning,maxInnings:g.maxInnings,
+        innOur:g.innOur,innOpp:g.innOpp,
+        log:g.log,
+        lineup:g.lineup,scorebook:g.scorebook,
+        lineupThem:g.lineupThem,scorebookThem:g.scorebookThem,
+        batFirst:g.batFirst,
+      };
+      hist.unshift(entry);
+      if(hist.length>30)hist.pop();
+      localStorage.setItem("yakyu_history",JSON.stringify(hist));
+    }catch(e){}
+  };
+  const upd=fn=>setG(g=>{const ng=cp(g);fn(ng);if(!g.gameOver&&ng.gameOver)setTimeout(()=>saveHistory(ng),0);pushG(ng);return ng;});
+  const buildNote=()=>{
+    if(!pi.fielder&&!pi.buntType)return"";
+    let b="";
+    if(pi.buntType){const pfx={sac:"犠B",safety:"安B",squeeze:"スクB"};b=(pfx[pi.buntType]||"B");}
+    if(pi.fielder){b+=pi.fielder+(pi.mod||"");if(pi.traj==="F")b="F"+b;else if(pi.traj==="L")b="L"+b;}
+    if(pi.throws.length)b+="-"+pi.throws.join("-");
+    return b;
+  };
+  const clearPi=()=>{
+    setPi({fielder:null,mod:null,traj:null,throws:[],buntType:null,errorType:null});
+    setStrikePick(false);
+  };
+  const tapFielder=(code,label)=>{
+    if(/^[1-9]$/.test(code)&&pi.fielder&&/^[1-9]$/.test(pi.fielder)&&pi.fielder.length===1&&pi.fielder!==code){const c=[pi.fielder,code].sort().join("");setPi(p=>({...p,fielder:c,mod:"間"}));showToast(c+"間");return;}
+    if(pi.fielder===code){clearPi();return;}
+    setPi(p=>({...p,fielder:code,mod:null}));showToast(label);
+  };
+  const isOurBat=g=>(g.batFirst&&g.isTop)||(!g.batFirst&&!g.isTop);
+  const FIELDER_NAME={"1":"ピッチャー(1)","2":"キャッチャー(2)","3":"ファースト(3)","4":"セカンド(4)","5":"サード(5)","6":"ショート(6)","7":"レフト(7)","8":"センター(8)","9":"ライト(9)","12":"投捕間","13":"投一間","23":"捕一間","34":"一二間","45":"二三間","56":"三遊間"};
+
+  function decodeNote(note,type){
+    if(!note||note===type)return"";
+    let buntPfx="",rest=note;
+    if(rest.startsWith("犠B")){buntPfx="送りバント ";rest=rest.slice(2);}
+    else if(rest.startsWith("安B")){buntPfx="セーフティバント ";rest=rest.slice(2);}
+    else if(rest.startsWith("スクB")){buntPfx="スクイズ ";rest=rest.slice(3);}
+    let trajStr="";
+    if(rest.startsWith("F")){trajStr="フライ";rest=rest.slice(1);}
+    else if(rest.startsWith("L")){trajStr="ライナー";rest=rest.slice(1);}
+    const parts=rest.split("-");
+    const fielder=parts[0]||"";
+    const throws=parts.slice(1);
+    const fKey=fielder.replace(/[前後横間]/g,"");
+    const modMatch=fielder.match(/[前後横]/);
+    const modStr=modMatch?({"前":"前","後":"後ろ","横":"横"}[modMatch[0]]||modMatch[0]):"";
+    let fName="";
+    if(fKey.length===2&&FIELDER_NAME[fKey]){fName=FIELDER_NAME[fKey]+"間";}
+    else if(fKey.length===1&&FIELDER_NAME[fKey]){fName=FIELDER_NAME[fKey]+(modStr?modStr:"");}
+    const throwStr=throws.filter(t=>t).map(t=>{if(t==="E")return"失策";return FIELDER_NAME[t]||t;}).join("→");
+    return[buntPfx,trajStr,fName,throwStr&&throwStr!==fName?"→"+throwStr:""].filter(Boolean).join("");
+  }
+
+  function describePlay(type,note,name){
+    const dec=decodeNote(note,type);
+    if(type==="1B")return dec?`${name} 単打（${dec}）`:`${name} 単打`;
+    if(type==="2B")return dec?`${name} 二塁打（${dec}）`:`${name} 二塁打`;
+    if(type==="3B")return dec?`${name} 三塁打（${dec}）`:`${name} 三塁打`;
+    if(type==="HR")return`${name} ホームラン！`;
+    if(type==="BB")return`${name} 四球`;
+    if(type==="HBP")return`${name} 死球`;
+    if(type==="FC")return dec?`${name} 野選（${dec}）`:`${name} 野選`;
+    if(type==="K")return`${name} 見逃し三振`;
+    if(type==="KS")return`${name} 空振り三振`;
+    if(type==="KR")return`${name} 振り逃げ`;
+    if(type==="GO")return dec?`${name} ゴロアウト（${dec}）`:`${name} ゴロアウト`;
+    if(type==="FO"){const isLiner=note&&(note.startsWith("L")||note.includes("ライナー"));return dec?`${name} ${isLiner?"ライナー":"フライ"}アウト（${dec}）`:`${name} ${isLiner?"ライナー":"フライ"}アウト`;}
+    if(type==="DP")return dec?`${name} ゲッツー（${dec}）`:`${name} ゲッツー`;
+    if(type==="SF")return dec?`${name} 犠牲フライ（${dec}）`:`${name} 犠牲フライ`;
+    if(type==="SH")return dec?`${name} 送りバント（${dec}）`:`${name} 送りバント`;
+    return dec?`${name} ${dec}`:note||type;
+  }
+
+  const doOut=(g,type,note,skipPitch=false)=>{
+    const isOurs=isOurBat(g);
+    const lineup=isOurs?g.lineup:g.lineupThem;
+    const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+    const bat=lineup[cb];
+    const name=bat?bat.name:(isOurs?"打者":"相手打者");
+    const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:name;
+    const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+    if(!skipPitch)addPitchCount(g);
+    g.outs++;
+    if(type==="DP"){
+      g.outs=Math.min(g.outs+1,3);
+      // アウトになった走者を特定してログに記録
+      const bnames=["一塁","二塁","三塁"];
+      for(let i=0;i<3;i++){
+        if(g.bases[i]){
+          const rn=g.runnerNames?g.runnerNames[i]:null;
+          addLog(g,`❌ ${rn?rn:"走者"}（${bnames[i]}）ゲッツーアウト`,"o");
+          g.bases[i]=false;if(g.runnerNames)g.runnerNames[i]=null;
+          break;
+        }
+      }
+    }
+    if(type==="SF")autoScore(g,isOurs);
+    if(bat&&type!=="SH"&&type!=="SF"){bat.ab=(bat.ab||0)+1;}
+    if(isOurs)setSB(g,inKey,type,note,"");
+    else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]=type;g.scorebookThem[cb][inKey+"_note"]=note;}
+    addLog(g,`❌ ${describePlay(type,note,nameWithOrder)}`,"o");
+    // 打席完了→3アウトでも必ず打順を進める
+    if(isOurs&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+    else if(!isOurs&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+    else if(!isOurs)g.currentBatterThem=(g.currentBatterThem||0)+1;
+    g.balls=0;g.strikes=0;
+    clearPi();
+    if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);return;}
+    showToast(`${name} ${PL[type]||note}`);
+  };
+
+  const doHit=(g,type,note,skipPitch=false)=>{
+    const isOurs=isOurBat(g);
+    const lineup=isOurs?g.lineup:g.lineupThem;
+    const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+    const bat=lineup[cb];
+    const name=bat?bat.name:(isOurs?"打者":"相手打者");
+    const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:name;
+    const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+    if(!skipPitch)addPitchCount(g);
+    if(bat&&type!=="BB"&&type!=="HBP")bat.ab=(bat.ab||0)+1;
+    if(bat&&["1B","2B","3B","HR"].includes(type))bat.hits=(bat.hits||0)+1;
+    if(isOurs)setSB(g,inKey,type,note||buildNote()||type,"");
+    else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]=type;g.scorebookThem[cb][inKey+"_note"]=note||type;}
+    if(type==="BB"||type==="HBP"){advBasesBB(g,isOurs,bat||{name:"相手",num:""},bat?cb+1:null);}
+    else{advBases(g,ADV[type]||1,type==="HR",isOurs,bat||{name:"相手",num:""},bat?cb+1:null);}
+    if(type==="HR"&&bat)bat.rbi=(bat.rbi||0)+1;
+    const emoji=type==="BB"||type==="HBP"?"🚶":type==="HR"?"🎉":"✅";
+    addLog(g,`${emoji} ${describePlay(type,note,nameWithOrder)}`,type==="BB"||type==="HBP"?"b":"h");
+    showToast(`${name} ${PL[type]||type}！`);
+    g.balls=0;g.strikes=0;
+    if(isOurs&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+    else if(!isOurs&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+    else if(!isOurs)g.currentBatterThem=(g.currentBatterThem||0)+1;
+    clearPi();
+  };
+
+  const pitch=t=>{
+    if((t==="S"||t==="KS")&&G.strikes===2){const canFuri=!G.bases[0]||G.outs===2;if(canFuri){setStrikePick(false);setFurinige(t);return;}}
+    snap();upd(g=>{
+      const isOursBatting=isOurBat(g);
+      // チーム合計球数
+      if(isOursBatting){g.pitchCountThem=(g.pitchCountThem||0)+1;}else{g.pitchCount=(g.pitchCount||0)+1;}
+      // 個人球数：守備側チームの投手（pos==="投"または"1"）の選手に加算
+      const defLineup=isOursBatting?g.lineupThem:g.lineup;
+      const pitcher=defLineup.find(p=>p.pos==="投"||p.pos==="1");
+      if(pitcher)pitcher.pitchCount=(pitcher.pitchCount||0)+1;
+      if(!g.pitchLog)g.pitchLog=[];
+      g.pitchLog.push({inn:g.inning,isTop:g.isTop,pitch:t,t:ts()});
+      if(t==="S"){g.strikes++;if(g.strikes>=3){doOut(g,"K","K",true);return;}addLog(g,"/ 見逃し","s");}
+      else if(t==="KS"){g.strikes++;if(g.strikes>=3){doOut(g,"KS","○K",true);return;}addLog(g,"× 空振り","s");}
+      else if(t==="B"){g.balls++;if(g.balls>=4){doHit(g,"BB","B",true);return;}addLog(g,"⚪ ボール","s");}
+      else if(t==="F"){if(g.strikes<2)g.strikes++;addLog(g,"〇 ファール","s");setFoulFlash(true);setTimeout(()=>setFoulFlash(false),1500);}
+    });
+  };
+
+  const handleFurinige=choice=>{
+    setFurinige(null);snap();
+    upd(g=>{
+      if(choice==="swing"){doOut(g,"KS","○K");}
+      else if(choice==="normal"){doOut(g,"K","K");}
+      else if(choice==="safe"||choice==="safe_wp"||choice==="safe_pb"){
+        const wpTag=choice==="safe_wp"?" (WP)":choice==="safe_pb"?" (PB)":"";
+        const isOurs=isOurBat(g);
+        const lineup=isOurs?g.lineup:g.lineupThem;
+        const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+        const bat=lineup[cb];
+        const name=bat?bat.name:"打者";
+        const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+        if(bat)bat.ab=(bat.ab||0)+1;
+        if(isOurs)setSB(g,inKey,"KR","K'"+wpTag,"");
+        else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="KR";g.scorebookThem[cb][inKey+"_note"]="K'"+wpTag;}
+        if(!g.runnerNames)g.runnerNames=[null,null,null];
+        const lbl2=bat?`${cb+1}${bat.name.slice(0,2)}`:"?";
+        if(!g.bases[0]){g.bases[0]=true;g.runnerNames[0]=lbl2;}else{advBases(g,1,false,isOurs,bat,bat?cb+1:null);}
+        addLog(g,`🏃 ${name} 振り逃げ${wpTag?"（"+wpTag.trim()+"）":""}`,"b");
+        showToast(`${name} K'振り逃げ！`);
+        g.balls=0;g.strikes=0;
+        if(isOurs&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+        else if(!isOurs&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+        else if(!isOurs)g.currentBatterThem=(g.currentBatterThem||0)+1;
+        clearPi();
+      } else if(choice==="out"){doOut(g,"KR","K' 2-3");}
+    });
+  };
+
+  const playAction=type=>{
+    snap();upd(g=>{
+      if(!g.runnerNames)g.runnerNames=[null,null,null];
+      const isOurs=isOurBat(g);
+      const lineup=isOurs?g.lineup:g.lineupThem;
+      const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+      const bat=lineup[cb];
+      if(type==="SB"){
+        for(let i=2;i>=0;i--){if(g.bases[i]){g.bases[i]=false;if(i<2){g.bases[i+1]=true;if(g.runnerNames){g.runnerNames[i+1]=g.runnerNames[i];g.runnerNames[i]=null;}}else{autoScore(g,isOurs);if(g.runnerNames)g.runnerNames[i]=null;}break;}}
+        addLog(g,`💨 ${bat?bat.name:"走者"} 盗塁成功`,"b");showToast("盗塁！");return;
+      }
+      if(type==="CS"){
+        const bn=["一塁","二塁","三塁"];
+        for(let i=2;i>=0;i--){if(g.bases[i]){g.bases[i]=false;g.runnerNames[i]=null;g.outs++;addLog(g,`❌ ${bn[i]}走者 盗塁死`,"o");if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);}else showToast(`${bn[i]} 盗塁死`);return;}}
+        showToast("走者がいません");return;
+      }
+      if(OUTP.includes(type)){doOut(g,type,type);}
+      else if(HITS.includes(type)){doHit(g,type,buildNote()||type);}
+    });
+  };
+
+  const confirmPlay=rt=>{
+    const note=buildNote();if(!note){showToast("野手を選んでください");return;}
+
+    if(rt==="DP"){
+      const throws=[...pi.throws];
+      snap();
+      upd(g=>{
+        if(!g.runnerNames)g.runnerNames=[null,null,null];
+        const isOurs=isOurBat(g);
+        const lineup=isOurs?g.lineup:g.lineupThem;
+        const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+        const bat=lineup[cb];
+        const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:"打者";
+        const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+        const bnames=["一塁","二塁","三塁"];
+
+        // 送球先→塁インデックス (4=2塁→1塁走者, 5=3塁→2塁走者, 2=本塁→3塁走者)
+        const runnerOutMap={"4":0,"5":1,"2":2};
+        // 送球先に3(一塁)が含まれる→バッターアウト
+        const batterOut=throws.includes("3");
+
+        // 走者アウト処理（送球順に）
+        throws.forEach(t=>{
+          const idx=runnerOutMap[t];
+          if(idx!==undefined&&g.bases[idx]){
+            const rn=g.runnerNames[idx];
+            g.bases[idx]=false;g.runnerNames[idx]=null;
+            g.outs++;
+            addLog(g,`❌ ${rn||"走者"}（${bnames[idx]}走者）ゲッツーアウト`,"o");
+          }
+        });
+
+        if(bat)bat.ab=(bat.ab||0)+1;
+
+        if(batterOut){
+          // バッターもアウト
+          g.outs++;
+          if(isOurs)setSB(g,inKey,"DP",note,"");
+          else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="DP";g.scorebookThem[cb][inKey+"_note"]=note;}
+          addLog(g,`❌ ${nameWithOrder} ゲッツー（${note}）`,"o");
+        } else {
+          // バッターセーフ（FC扱い）
+          if(isOurs)setSB(g,inKey,"FC",note,"");
+          else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="FC";g.scorebookThem[cb][inKey+"_note"]=note;}
+          const lbl=bat?`${cb+1}${bat.name.slice(0,2)}`:"?";
+          g.bases[0]=true;g.runnerNames[0]=lbl;
+          addLog(g,`✅ ${nameWithOrder} ゲッツー崩れセーフ（${note}）`,"b");
+        }
+
+        g.balls=0;g.strikes=0;
+        if(isOurs&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+        else if(!isOurs&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+        else if(!isOurs)g.currentBatterThem=(g.currentBatterThem||0)+1;
+        clearPi();
+        if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);}
+        else showToast(`ゲッツー（${note}）`);
+      });
+      return;
+    }
+
+    const outType=pi.traj==="F"?"FO":pi.traj==="L"?"FO":"GO";
+    snap();upd(g=>{
+      if(!g.runnerNames)g.runnerNames=[null,null,null];
+      if(rt==="HIT")doHit(g,"1B",note);
+      else if(rt==="FC")doHit(g,"FC",note);
+      else doOut(g,outType,note);
+    });
+  };
+
+  const handleBaseTap=n=>{
+    if(G.bases[n-1]){setRunnerSheet({base:n});setRundownNote("");}
+    else{snap();upd(g=>{if(!g.runnerNames)g.runnerNames=[null,null,null];g.bases[n-1]=true;g.runnerNames[n-1]="?";});}
+  };
+
+  const doRunnerAction=(action,targetBase)=>{
+    const base=runnerSheet.base;setRunnerSheet(null);snap();
+    upd(g=>{
+      if(!g.runnerNames)g.runnerNames=[null,null,null];
+      const isOurs2=isOurBat(g);
+      const rn=g.runnerNames[base-1]||"走者";
+      const remove=()=>{g.bases[base-1]=false;g.runnerNames[base-1]=null;};
+      const advance=to=>{const r=g.runnerNames[base-1];remove();if(to==="home"){autoScore(g,isOurs2);}else{g.bases[to-1]=true;g.runnerNames[to-1]=r;}};
+      const out=(msg)=>{remove();g.outs++;addLog(g,`❌ ${rn} ${msg}`,"o");if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);}};
+      const bfull=["一塁","二塁","三塁"];
+      const toName=targetBase==="home"?"本塁":bfull[targetBase-1]||"";
+      if(action==="advance"){advance(targetBase);addLog(g,`🏃 ${rn} →${bfull[targetBase-1]}`,"b");showToast(`${rn} ${bfull[targetBase-1]}へ`);}
+      else if(action==="score"){advance("home");addLog(g,`🏠 ${rn} 生還！`,"r");showToast(`${rn} 生還！`);}
+      else if(action==="out_touch"){out(`${bfull[base-1]}でタッチアウト`);if(g.outs<3)showToast(`${rn} タッチアウト`);}
+      else if(action==="out_force"){out(`${bfull[base-1]}でフォースアウト`);if(g.outs<3)showToast(`${rn} フォースアウト`);}
+      else if(action==="out_fly"){out(`飛球アウト`);if(g.outs<3)showToast(`${rn} 飛球アウト`);}
+      else if(action==="out"){out(`${bfull[base-1]}でアウト`);if(g.outs<3)showToast(`${rn} アウト`);}
+      else if(action==="steal"){advance(targetBase);addLog(g,`💨 ${rn} 盗塁成功`,"b");showToast(`${rn} 盗塁！`);}
+      else if(action==="caught"){out(`盗塁死`);if(g.outs<3)showToast(`${rn} 盗塁死`);}
+      else if(action==="delayed_steal"){advance(targetBase);addLog(g,`💨 ${rn} ディレードスチール`,"b");showToast(`${rn} DS！`);}
+      else if(action==="delayed_caught"){out(`DS失敗`);if(g.outs<3)showToast(`${rn} DS失敗`);}
+      else if(action==="wp"){advance(targetBase);addLog(g,`💥 WP 暴投 ${rn}進塁`,"b");showToast(`WP 暴投`);}
+      else if(action==="pb"){advance(targetBase);addLog(g,`💥 PB 捕逸 ${rn}進塁`,"b");showToast(`PB 捕逸`);}
+      else if(action==="tagup"){advance(targetBase);addLog(g,`✈️ ${rn} タッチアップ`,targetBase==="home"?"r":"b");showToast(`${rn} タッチアップ！`);}
+      else if(action==="tagup_fail"){out(`タッチアップ失敗`);if(g.outs<3)showToast(`${rn} タッチアップ失敗`);}
+      else if(action==="pickoff"){out(`牽制アウト`);if(g.outs<3)showToast(`${rn} 牽制アウト`);}
+      else if(action==="rundown"){const note2=targetBase||"";out(`ランダウンアウト${note2?" "+note2:""}`);if(g.outs<3)showToast(`${rn} ランダウンアウト`);}
+      else if(action==="out_at_home"){out("本塁憤死");if(g.outs<3)showToast(`${rn} 本塁憤死！`);}
+      else if(action==="def_obst"){out(`守備妨害`);if(g.outs<3)showToast(`${rn} 守備妨害アウト`);}
+      else if(action==="run_obst"){advance(targetBase);addLog(g,`⚠ ${rn} 走塁妨害→${toName}進塁付与`,"b");showToast(`${rn} 走塁妨害→進塁`);}
+      else if(action==="retreat"){
+        const r=g.runnerNames[base-1];
+        remove();
+        const prev=base-1; // 1つ前の塁（1塁なら0=ホーム付近だが2塁以上のみ表示）
+        g.bases[prev-1]=true;g.runnerNames[prev-1]=r;
+        showToast(`${rn} ${["","一","二","三"][prev]}塁へ戻す`);
+      }
+    });
+  };
+
+  const doBalk=()=>{
+    snap();upd(g=>{
+      if(!g.runnerNames)g.runnerNames=[null,null,null];
+      const isOurs2=isOurBat(g);
+      for(let i=2;i>=0;i--){if(g.bases[i]){const rn=g.runnerNames[i];g.bases[i]=false;g.runnerNames[i]=null;if(i===2){autoScore(g,isOurs2);}else{g.bases[i+1]=true;g.runnerNames[i+1]=rn;}}}
+      addLog(g,`⚠ ボーク—走者全員1つ進塁`,"b");showToast("ボーク！走者進塁");
+    });
+  };
+
+  const doInterference=()=>{
+    snap();upd(g=>{
+      if(!g.runnerNames)g.runnerNames=[null,null,null];
+      const isOurs2=isOurBat(g);
+      const lineup=isOurs2?g.lineup:g.lineupThem;
+      const cb=isOurs2?g.currentBatter:(g.currentBatterThem||0);
+      const bat=lineup[cb];
+      const name=bat?bat.name:"打者";
+      advBasesBB(g,isOurs2,bat||{name:"打者",num:""});
+      addLog(g,`⚠ ${name} 打撃妨害—1塁へ`,"b");showToast(`${name} 打撃妨害—1塁へ`);
+      g.balls=0;g.strikes=0;
+      if(isOurs2&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+      else if(!isOurs2&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+      clearPi();
+    });
+  };
+
+  const isOurs=(G.batFirst&&G.isTop)||(!G.batFirst&&!G.isTop);
+  const battingTeam=isOurs?G.ourTeam:G.oppTeam;
+  const batter=G.lineup[G.currentBatter];
+  const half=G.isTop?"表":"裏";
+  const sec={fontSize:8,fontWeight:900,letterSpacing:"0.12em",color:C.gray,textTransform:"uppercase",margin:"5px 0 3px"};
+
+  if(screen==="select")return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,padding:24,background:C.bg,minHeight:"100vh",fontFamily:"inherit"}}>
+      <div style={{textAlign:"center"}}><div style={{fontSize:52}}>⚾</div><div style={{fontSize:20,fontWeight:900,color:"#1a3a6a",marginTop:4}}>函南少年試合速報</div></div>
+      {(isViewerOnly?[["viewer","🏟","試合速報","リアルタイム速報（親御さん向け）",C.green,"#f0faf3"]]:[["staff","📋","スタッフ入力モード","スコアを記録する（会場用）",C.gold,"#fffde7"],["viewer","🏟","試合速報","リアルタイム速報（親御さん向け）",C.green,"#f0faf3"]]).map(([m,ico,t,s,bc,bg])=>(
+        <div key={m} onClick={()=>setScreen(m)} style={{width:"100%",maxWidth:340,padding:"16px 20px",borderRadius:12,border:`2px solid ${bc}`,background:bg,cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+          <span style={{fontSize:28}}>{ico}</span><div><div style={{fontSize:15,fontWeight:900,color:bc}}>{t}</div><div style={{fontSize:11,color:C.gray,marginTop:2}}>{s}</div></div>
+        </div>
+      ))}
+      <div onClick={()=>setScreen("history")} style={{width:"100%",maxWidth:340,padding:"16px 20px",borderRadius:12,border:"2px solid #5c35cc",background:"#f0f0ff",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+        <span style={{fontSize:28}}>📚</span><div><div style={{fontSize:15,fontWeight:900,color:"#5c35cc"}}>過去の試合</div><div style={{fontSize:11,color:C.gray,marginTop:2}}>保存された試合結果を見る</div></div>
+      </div>
+      {!isViewerOnly&&(
+        <div style={{width:"100%",maxWidth:340,padding:"8px 14px",borderRadius:10,border:`1.5px solid ${connected?"#1a7a3a":"#e65100"}`,background:connected?"#f0faf3":"#fff8e1",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{connected?"🟢":"🔴"}</span>
+          <span style={{fontSize:11,fontWeight:700,color:connected?"#1a7a3a":"#e65100"}}>{connected?"接続中 — リアルタイム同期中":"オフライン — 接続待機中"}</span>
+        </div>
+      )}
+    </div>
+  );
+
+  if(screen==="history")return(
+    <div style={{background:"#0a1628",minHeight:"100vh",fontFamily:"inherit",display:"flex",flexDirection:"column"}}>
+      <div style={{background:"rgba(0,0,0,.5)",padding:"12px 14px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <span style={{fontSize:18}}>📚</span>
+        <span style={{flex:1,fontSize:14,fontWeight:900,color:"#fff"}}>過去の試合</span>
+        <button onClick={()=>setScreen("select")} style={{background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",borderRadius:8,padding:"5px 12px",color:"rgba(255,255,255,.8)",fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕ 閉じる</button>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"10px 10px 24px"}}>
+        {(()=>{
+          let h=[];
+          try{h=JSON.parse(localStorage.getItem("yakyu_history")||"[]");}catch(e){}
+          if(!h.length)return(<div style={{textAlign:"center",color:"rgba(255,255,255,.35)",fontSize:13,padding:"60px 0"}}>保存された試合はありません<br/><span style={{fontSize:11,display:"block",marginTop:6}}>試合終了ボタンを押すと自動保存されます</span></div>);
+          return h.map(function(item){return(<HistCard key={item.id} h={item} onDelete={null}/>);});
+        })()}
+      </div>
+    </div>
+  );
+
+  if(screen==="viewer")return(
+    <div style={{background:"linear-gradient(180deg,#0a1628 0%,#0d2040 40%,#0a1628 100%)",height:"100vh",color:"#aaccff",fontFamily:"inherit",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {toast&&<div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"rgba(255,215,64,.95)",border:"none",borderRadius:100,padding:"8px 20px",fontSize:12,fontWeight:900,color:"#1a2332",zIndex:999,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(255,215,64,.5)"}}>{toast}</div>}
+
+      {/* ━━ トップバー ━━ */}
+      <div style={{background:"rgba(0,0,0,.5)",backdropFilter:"blur(8px)",padding:"10px 14px",display:"flex",alignItems:"center",gap:8,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <button onClick={()=>setScreen("select")} style={{background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",borderRadius:8,padding:"4px 10px",color:"rgba(255,255,255,.8)",fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0}}>✕</button>
+        <span style={{fontSize:18}}>⚾</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:12,fontWeight:900,color:"#fff"}}>{G.ourTeam} <span style={{color:"rgba(255,255,255,.75)",fontWeight:400}}>vs</span> {G.oppTeam}</div>
+          <div style={{fontSize:9,color:"rgba(255,255,255,.8)",marginTop:1}}>{G.gameDate?G.gameDate+" · ":""}{G.gameLocation?G.gameLocation+" · ":""}{G.inning}回{half} — {isOurs?G.ourTeam:G.oppTeam}の攻撃{elapsed?" ⏱"+elapsed:""}</div>
+        </div>
+        {G.gameOver
+          ?<span style={{fontSize:9,fontWeight:900,color:"#ff4444",background:"rgba(255,68,68,.15)",border:"1px solid rgba(255,68,68,.4)",borderRadius:100,padding:"3px 10px"}}>試合終了</span>
+          :<span style={{fontSize:9,fontWeight:900,color:"#ff4444",display:"flex",alignItems:"center",gap:4}}><span style={{width:7,height:7,borderRadius:"50%",background:"#ff4444",display:"inline-block",boxShadow:"0 0 6px #ff4444"}}/>LIVE</span>
+        }
+      </div>
+
+      {/* ━━ スコアボード ━━ */}
+      <div style={{margin:"10px 10px 0",background:"rgba(0,0,0,.45)",border:"1px solid rgba(255,255,255,.08)",borderRadius:12,overflow:"hidden",boxShadow:"0 4px 20px rgba(0,0,0,.4)"}}>
+        {/* ヘッダー行（イニング番号） */}
+        <div style={{display:"flex",background:"rgba(255,255,255,.04)",borderBottom:"1px solid rgba(255,255,255,.07)"}}>
+          <div style={{width:68,padding:"4px 8px",fontSize:9,color:"rgba(255,255,255,.75)",fontWeight:700,flexShrink:0}}>TEAM</div>
+          <div style={{flex:1,display:"flex",overflowX:"auto"}}>
+            {Array.from({length:Math.max(G.maxInnings,G.inning)},(_,i)=>{
+              const inn=i+1;
+              const isCurrentInn=inn===G.inning;
+              return(
+                <div key={i} style={{minWidth:28,textAlign:"center",padding:"4px 2px",fontSize:9,fontWeight:900,color:isCurrentInn?"#ffd740":"rgba(255,255,255,.6)",background:isCurrentInn?"rgba(255,215,64,.08)":""}}>{inn}</div>
+              );
+            })}
+          </div>
+          <div style={{width:36,textAlign:"center",padding:"4px 4px",fontSize:9,fontWeight:900,color:"#ffd740",borderLeft:"1px solid rgba(255,255,255,.07)"}}>R</div>
+        </div>
+        {/* チーム行 */}
+        {(()=>{const rows=[[G.ourTeam,G.innOur,G.ourScore,isOurs,0],[G.oppTeam,G.innOpp,G.oppScore,!isOurs,1]];return rows.map(([team,inn,sc,isBatting,ri])=>(
+          <div key={ri} style={{display:"flex",alignItems:"center",borderTop:ri>0?"1px solid rgba(255,255,255,.05)":"none",background:isBatting?"rgba(255,215,64,.05)":""}}>
+            <div style={{width:68,padding:"7px 8px",fontWeight:900,fontSize:12,color:isBatting?"#ffd740":ri===0?"#aaff70":"#7ec8ff",flexShrink:0,display:"flex",alignItems:"center",gap:4}}>
+              {isBatting&&<span style={{width:5,height:5,borderRadius:"50%",background:"#ffd740",display:"inline-block",boxShadow:"0 0 6px #ffd740",flexShrink:0}}/>}
+              {String(team).slice(0,5)}
+            </div>
+            <div style={{flex:1,display:"flex",overflowX:"auto"}}>
+              {Array.from({length:Math.max(G.maxInnings,G.inning)},(_,i)=>{
+                const inn2=i+1;
+                const isCurrentInn=inn2===G.inning;
+                const val=inn[i];
+                return(
+                  <div key={i} style={{minWidth:28,textAlign:"center",padding:"6px 2px",fontSize:12,fontWeight:val>0?900:400,color:val>0?(isBatting?"#ffd740":ri===0?"#aaff70":"#7ec8ff"):"rgba(255,255,255,.2)",background:isCurrentInn?(isBatting?"rgba(255,215,64,.12)":"rgba(255,255,255,.04)"):""}}>{val!==undefined?val:"·"}</div>
+                );
+              })}
+            </div>
+            <div style={{width:36,textAlign:"center",padding:"6px 4px",fontWeight:900,fontSize:20,color:isBatting?"#ffd740":ri===0?"#aaff70":"#7ec8ff",borderLeft:"1px solid rgba(255,255,255,.07)"}}>{sc}</div>
+          </div>
+        ))})()}
+      </div>
+
+      {/* ━━ BSO＋バッター 横並び ━━ */}
+      <div style={{margin:"10px 10px 0",display:"flex",gap:8}}>
+        {/* BSOカード */}
+        <div style={{background:"rgba(0,0,0,.45)",border:"1px solid rgba(255,255,255,.08)",borderRadius:12,padding:"8px 10px",boxShadow:"0 4px 16px rgba(0,0,0,.3)",position:"relative",overflow:"hidden",flexShrink:0}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#ffd740,transparent)"}}/>
+          {/* イニング */}
+          <div style={{fontSize:11,fontWeight:900,color:"#ffd740",marginBottom:6,letterSpacing:".03em"}}>{G.inning}回{half}</div>
+          {/* BSO + ダイヤモンド 横並び */}
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {/* BSO */}
+            <div>
+              {[
+                ["B",G.balls,3,"#00dd44","0 0 8px #00dd44, 0 0 16px rgba(0,221,68,.4)"],
+                ["S",G.strikes,2,"#ffdd00","0 0 8px #ffdd00, 0 0 16px rgba(255,221,0,.4)"],
+                ["O",G.outs,2,"#ff3333","0 0 8px #ff3333, 0 0 16px rgba(255,51,51,.4)"],
+              ].map(([lbl,cnt,max,col,shadow])=>(
+                <div key={lbl} style={{display:"flex",alignItems:"center",gap:4,marginBottom:3}}>
+                  <span style={{fontSize:8,fontWeight:900,color:"rgba(255,255,255,.85)",width:9}}>{lbl}</span>
+                  <div style={{display:"flex",gap:3}}>
+                    {Array.from({length:max},(_,i)=>(
+                      <div key={i} style={{width:12,height:12,borderRadius:"50%",background:i<cnt?col:"rgba(255,255,255,.07)",border:`1.5px solid ${i<cnt?col:"rgba(255,255,255,.12)"}`,boxShadow:i<cnt?shadow:"inset 0 1px 3px rgba(0,0,0,.5)",transition:"all .2s"}}/>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* 走者ダイヤモンド */}
+            <div style={{position:"relative",width:30,height:30,flexShrink:0}}>
+              {[[1,21,14],[2,12,5],[3,3,14]].map(([n,lx,ty])=>(
+                <div key={n} style={{position:"absolute",left:lx,top:ty,width:8,height:8,background:G.bases[n-1]?"#ffd740":"rgba(255,255,255,.1)",border:`1.5px solid ${G.bases[n-1]?"#ffd740":"rgba(255,255,255,.2)"}`,borderRadius:2,transform:"rotate(45deg)",boxShadow:G.bases[n-1]?"0 0 5px #ffd740":""}}/>
+              ))}
+              <div style={{position:"absolute",left:21,top:22,width:6,height:6,background:"rgba(255,255,255,.15)",borderRadius:"50%"}}/>
+            </div>
+          </div>
+        </div>
+        {/* 打者カード */}
+        <div style={{flex:1,background:"rgba(0,0,0,.45)",border:"1px solid rgba(255,255,255,.08)",borderRadius:12,padding:"8px 10px",boxShadow:"0 4px 16px rgba(0,0,0,.3)",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#7ec8ff,transparent)"}}/>
+          <div style={{fontSize:7,fontWeight:900,color:"#7ec8ff",letterSpacing:".12em",marginBottom:4}}>NOW BATTING</div>
+          {(()=>{
+            const themBat=G.lineupThem[(G.currentBatterThem||0)%Math.max(G.lineupThem.length,1)];
+            const showBat=isOurs?batter:themBat;
+            const showIdx=isOurs?G.currentBatter:(G.currentBatterThem||0);
+            return(
+              <>
+                <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:2}}>
+                  <span style={{fontSize:20,fontWeight:900,color:"#ffd740",lineHeight:1}}>{showBat?showIdx+1:"-"}</span>
+                  <span style={{fontSize:8,color:"rgba(255,255,255,.85)"}}>番</span>
+                </div>
+                <div style={{fontSize:15,fontWeight:900,color:"#fff",lineHeight:1.1,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{showBat?showBat.name:"—"}</div>
+                <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                  <span style={{fontSize:8,color:"rgba(255,255,255,.85)"}}>{showBat?showBat.pos:""}{showBat?.num?` #${showBat.num}`:""}</span>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+        {/* 投手カード */}
+        <div style={{flex:1,background:"rgba(0,0,0,.45)",border:"1px solid rgba(255,255,255,.08)",borderRadius:12,padding:"8px 10px",boxShadow:"0 4px 16px rgba(0,0,0,.3)",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#5599cc,transparent)"}}/>
+          <div style={{fontSize:7,fontWeight:900,color:"#7ec8ff",letterSpacing:".12em",marginBottom:4}}>PITCHER</div>
+          {(()=>{
+            const defLineup=isOurs?G.lineupThem:G.lineup;
+            const pitcher=defLineup.find(p=>p.pos==="投"||p.pos==="1");
+            const pc=pitcher?(pitcher.pitchCount||0):(isOurs?(G.pitchCountThem||0):(G.pitchCount||0));
+            return(
+              <>
+                <div style={{fontSize:15,fontWeight:900,color:"#fff",lineHeight:1.1,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{pitcher?pitcher.name:"—"}</div>
+                <div style={{fontSize:8,color:"rgba(255,255,255,.7)",marginBottom:4}}>{pitcher?.num?`#${pitcher.num}`:""}</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:3}}>
+                  <span style={{fontSize:20,fontWeight:900,color:"#7ec8ff",lineHeight:1}}>{pc}</span>
+                  <span style={{fontSize:8,color:"rgba(255,255,255,.85)"}}>球</span>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* ━━ 速報ログ ━━ */}
+      <div style={{margin:"10px 10px 8px",flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
+        <div style={{fontSize:8,fontWeight:900,color:"rgba(255,255,255,.75)",letterSpacing:".12em",marginBottom:5}}>◀ 速報ログ</div>
+        <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:3}}>
+          {!G.log.length&&<div style={{padding:16,color:"#fff",fontSize:11,textAlign:"center"}}>まだ記録がありません</div>}
+          {G.log.map((l,i)=>{
+            const accent=l.type==="r"?"#aaff70":l.type==="o"?"#ff7070":l.type==="h"?"#7ec8ff":l.type==="b"?"#ffd740":"#7ec8ff";
+            const bgCol=l.type==="r"?"rgba(100,255,100,.06)":l.type==="o"?"rgba(255,80,80,.06)":l.type==="h"?"rgba(100,180,255,.06)":l.type==="b"?"rgba(255,210,64,.06)":"rgba(255,255,255,.03)";
+            return(
+              <div key={i} style={{display:"flex",gap:8,padding:"7px 10px",background:bgCol,border:`1px solid ${i===0?"rgba(255,255,255,.1)":"rgba(255,255,255,.04)"}`,borderRadius:8,alignItems:"flex-start",boxShadow:i===0?"0 2px 8px rgba(0,0,0,.3)":"none",flexShrink:0}}>
+                <span style={{fontSize:8,color:"rgba(255,255,255,.7)",flexShrink:0,marginTop:2,minWidth:28}}>{l.t}</span>
+                <div style={{flex:1,display:"flex",alignItems:"flex-start",gap:5}}>
+                  <div style={{width:3,height:3,borderRadius:"50%",background:accent,marginTop:5,flexShrink:0,boxShadow:`0 0 4px ${accent}`}}/>
+                  <span style={{fontSize:11,fontWeight:i===0?800:400,color:i===0?"#fff":accent,lineHeight:1.4}}>{l.msg}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+    </div>
+  );
+
+  return(
+    <div style={{background:C.bg,minHeight:"100vh",fontFamily:"sans-serif",color:C.text,display:"flex",flexDirection:"column"}}>
+      <div style={{background:C.navy,padding:"6px 10px",display:"flex",alignItems:"center",gap:6,fontSize:11,flexShrink:0}}>
+        {/* トップに戻る */}
+        <button onClick={()=>setScreen("select")} style={{background:"none",border:"1px solid rgba(255,255,255,.3)",borderRadius:6,padding:"3px 8px",color:"rgba(255,255,255,.7)",fontSize:11,fontWeight:900,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✕</button>
+        {/* 回・攻撃中 */}
+        <span style={{fontWeight:900,color:"#ffd740",flexShrink:0}}>{G.inning}回{half}</span>
+        <span style={{background:isOurs?"#1a7a3a":"#cc2222",color:"#fff",fontWeight:900,fontSize:10,padding:"2px 7px",borderRadius:100,flexShrink:0}}>⚡ {battingTeam}</span>
+        {elapsed&&<span style={{fontSize:9,color:"#aac4f0",flexShrink:0}}>⏱{elapsed}</span>}
+        {/* スコア */}
+        <span style={{fontWeight:900,color:"#fff",fontSize:14,flexShrink:0}}>{G.ourScore}<span style={{color:"#aac4f0",fontSize:11}}>-</span>{G.oppScore}</span>
+        <span style={{flex:1}}/>
+        {/* 強制修正ボタン */}
+        <button onClick={()=>setCorrectSheet(true)} style={{background:"#c62828",border:"none",borderRadius:6,padding:"3px 8px",color:"#fff",fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>⚠️修正</button>
+        <span style={{flex:1}}/>
+        {/* 投手球数 */}
+        <button onClick={undoAction} style={{background:"none",border:"1.5px solid rgba(255,255,255,.3)",borderRadius:6,padding:"3px 8px",color:"#ffd740",fontSize:11,fontWeight:900,cursor:"pointer",fontFamily:"inherit"}}>↩</button>
+        <button onClick={()=>{pushG(G);showToast("💾 保存しました");}} style={{background:"none",border:"1px solid rgba(255,255,255,.3)",borderRadius:6,padding:"3px 8px",color:"#aaffaa",fontSize:11,fontWeight:900,cursor:"pointer",fontFamily:"inherit"}}>💾</button>
+        <button onClick={()=>setMenuSheet(true)} style={{background:"none",border:"1px solid rgba(255,255,255,.3)",borderRadius:6,padding:"3px 8px",color:"#fff",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>☰</button>
+      </div>
+      {toast&&<div style={{position:"fixed",top:60,left:"50%",transform:"translateX(-50%)",background:C.navy,border:"2px solid #ffd740",borderRadius:100,padding:"7px 18px",fontSize:12,fontWeight:800,color:"#fff",zIndex:999,whiteSpace:"nowrap"}}>{toast}</div>}
+      {furinige&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"#fff",borderRadius:"16px 16px 0 0",padding:"12px 10px 22px",width:"100%",maxWidth:480}}>
+            {/* ヘッダー */}
+            <div style={{background:C.navy,borderRadius:8,padding:"8px 12px",marginBottom:10,position:"relative"}}>
+              <div style={{fontSize:13,fontWeight:900,color:"#ffd740",textAlign:"center"}}>⚡ 第3ストライク — 結果を選択</div>
+              <div style={{fontSize:10,fontWeight:800,color:"#ffd740",textAlign:"center",marginTop:2}}>{!G.bases[0]?"1塁空：振り逃げ可":"2アウト：振り逃げ可"}</div>
+              <button onClick={()=>setFurinige(null)} style={{position:"absolute",top:6,right:8,background:"none",border:"none",color:"#aac4f0",fontSize:18,fontWeight:900,cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
+            </div>
+            {/* 行1: 空振り | 見逃し */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+              <button onClick={()=>handleFurinige("swing")} style={{padding:"10px 6px",border:"2.5px solid #cc2222",borderRadius:10,background:"#fff5f5",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{fontSize:11,fontWeight:900,color:"#cc2222",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:20,lineHeight:1}}>○K</span>空振り三振</div>
+                <div style={{fontSize:9,fontWeight:800,color:"#992222",marginTop:3,textAlign:"center"}}>捕手が捕球 → 即アウト</div>
+              </button>
+              <button onClick={()=>handleFurinige("normal")} style={{padding:"10px 6px",border:"2.5px solid #1a7a3a",borderRadius:10,background:"#f0faf3",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{fontSize:11,fontWeight:900,color:"#1a7a3a",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:20,lineHeight:1}}>/K</span>見逃し三振</div>
+                <div style={{fontSize:9,fontWeight:800,color:"#145c2a",marginTop:3,textAlign:"center"}}>正規捕球 → 即アウト</div>
+              </button>
+            </div>
+            {/* 行2: 振り逃げセーフ | 振り逃げアウト */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+              <button onClick={()=>handleFurinige("safe")} style={{padding:"10px 6px",border:"2.5px solid #1558c0",borderRadius:10,background:"#f0f5ff",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{fontSize:11,fontWeight:900,color:"#1558c0",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:20,lineHeight:1}}>K'</span>振り逃げ</div>
+                <div style={{fontSize:9,fontWeight:800,color:"#0d3d8c",marginTop:3,textAlign:"center"}}>ボール逸れ → 1塁セーフ</div>
+              </button>
+              <button onClick={()=>handleFurinige("out")} style={{padding:"10px 6px",border:"2.5px solid #e65100",borderRadius:10,background:"#fff8f0",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{fontSize:11,fontWeight:900,color:"#e65100",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{fontSize:20,lineHeight:1}}>K'×</span>振り逃げ失敗</div>
+                <div style={{fontSize:9,fontWeight:800,color:"#b33d00",marginTop:3,textAlign:"center"}}>1塁へ送球 → アウト</div>
+              </button>
+            </div>
+            {/* 行3: WP / PB */}
+            <div style={{borderTop:"1.5px dashed #d0d7e0",paddingTop:6}}>
+              <div style={{fontSize:9,fontWeight:900,color:"#6b7a8d",textAlign:"center",marginBottom:5}}>振り逃げセーフ＋原因記録</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                <button onClick={()=>handleFurinige("safe_wp")} style={{padding:"8px 6px",border:"2px solid #0288d1",borderRadius:9,background:"#e3f2fd",cursor:"pointer",fontFamily:"inherit"}}>
+                  <div style={{fontSize:10,fontWeight:900,color:"#0277bd",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}><span style={{fontSize:16,lineHeight:1}}>K'+WP</span>暴投</div>
+                  <div style={{fontSize:8,fontWeight:800,color:"#01579b",marginTop:2,textAlign:"center"}}>投手の暴投で逸れた</div>
+                </button>
+                <button onClick={()=>handleFurinige("safe_pb")} style={{padding:"8px 6px",border:"2px solid #2e7d32",borderRadius:9,background:"#e8f5e9",cursor:"pointer",fontFamily:"inherit"}}>
+                  <div style={{fontSize:10,fontWeight:900,color:"#1b5e20",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}><span style={{fontSize:16,lineHeight:1}}>K'+PB</span>捕逸</div>
+                  <div style={{fontSize:8,fontWeight:800,color:"#1b5e20",marginTop:2,textAlign:"center"}}>捕手の捕逸で逸れた</div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ━━ メニューシート ━━ */}
+      {menuSheet&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:950,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setMenuSheet(false);}}>
+          <div style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:480,padding:"16px 14px 32px"}}>
+            <div style={{fontSize:13,fontWeight:900,color:C.navy,marginBottom:14,textAlign:"center"}}>メニュー</div>
+            {[
+              ["⚡","入力画面","live","#fffde7",C.gold],
+              ["📋","スコアブック","score","#f0faf3",C.green],
+              ["👥","選手管理","lineup","#f0f5ff",C.blue],
+              ["⚙️","設定","config","#f8fafc",C.gray],
+              ["📚","過去の試合","history","#f0f0ff","#5c35cc"],
+            ].map(([ico,lbl,id,bg,col])=>(
+              <button key={id} onClick={()=>{setTab(id);setMenuSheet(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"13px 16px",border:`2px solid ${tab===id?col:C.border}`,borderRadius:10,background:tab===id?bg:"#fff",fontFamily:"inherit",cursor:"pointer",marginBottom:8}}>
+                <span style={{fontSize:24}}>{ico}</span>
+                <span style={{fontSize:14,fontWeight:900,color:tab===id?col:C.text}}>{lbl}</span>
+                {tab===id&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:900,color:col}}>● 表示中</span>}
+              </button>
+            ))}
+            <button key="viewer" onClick={()=>{setScreen("viewer");setMenuSheet(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"13px 16px",border:`2px solid ${C.border}`,borderRadius:10,background:"#fff",fontFamily:"inherit",cursor:"pointer",marginBottom:8}}>
+              <span style={{fontSize:24}}>📺</span>
+              <span style={{fontSize:14,fontWeight:900,color:C.text}}>試合速報（保護者向け）</span>
+            </button>
+            <button onClick={()=>setMenuSheet(false)} style={{width:"100%",padding:"10px",border:`1.5px solid ${C.border}`,borderRadius:8,background:"#f0f2f5",color:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>閉じる</button>
+          </div>
+        </div>
+      )}
+      {correctSheet&&(()=>{
+        const [cOuts,setCOuts]=[G.outs,v=>upd(g=>{const old=g.outs;g.outs=v;addLog(g,`📝 観覧できずスコア強制修正（アウト: ${old}→${v}）`,"s");if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);}})];
+        const [cOurScore,setCOurScore]=[G.ourScore,v=>upd(g=>{const old=g.ourScore;g.ourScore=v;ensureInn(g);g.innOur[g.inning-1]=(g.innOur[g.inning-1]||0)+(v-old);if(g.innOur[g.inning-1]<0)g.innOur[g.inning-1]=0;addLog(g,`📝 観覧できずスコア強制修正（${g.ourTeam}: ${old}→${v}点）`,"s");})];
+        const [cOppScore,setCOppScore]=[G.oppScore,v=>upd(g=>{const old=g.oppScore;g.oppScore=v;ensureInn(g);g.innOpp[g.inning-1]=(g.innOpp[g.inning-1]||0)+(v-old);if(g.innOpp[g.inning-1]<0)g.innOpp[g.inning-1]=0;addLog(g,`📝 観覧できずスコア強制修正（${g.oppTeam}: ${old}→${v}点）`,"s");})];
+        const numBtn=(lbl,fn,col="#1a7a3a")=>(
+          <button onClick={()=>{snap();fn();}} style={{padding:"8px 14px",border:`2px solid ${col}`,borderRadius:8,background:col,color:"#fff",fontFamily:"inherit",fontSize:14,fontWeight:900,cursor:"pointer"}}>{lbl}</button>
+        );
+        const row=(label,val,onMinus,onPlus)=>(
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+            <span style={{flex:1,fontSize:13,fontWeight:700,color:C.text}}>{label}</span>
+            {numBtn("−",onMinus,"#cc2222")}
+            <span style={{minWidth:32,textAlign:"center",fontSize:18,fontWeight:900,color:C.navy}}>{val}</span>
+            {numBtn("＋",onPlus)}
+          </div>
+        );
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:980,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setCorrectSheet(false);}}>
+            <div style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:480,padding:"14px 14px 32px"}}>
+              <div style={{background:"#c62828",borderRadius:10,padding:"9px 14px",marginBottom:12,position:"relative"}}>
+                <div style={{fontSize:14,fontWeight:900,color:"#fff",textAlign:"center"}}>⚠️ 強制修正</div>
+                <div style={{fontSize:10,color:"#ffcdd2",textAlign:"center",marginTop:2}}>操作ミスや記録漏れを直接修正します</div>
+                <button onClick={()=>setCorrectSheet(false)} style={{position:"absolute",top:8,right:10,background:"none",border:"none",color:"rgba(255,255,255,.8)",fontSize:18,fontWeight:900,cursor:"pointer",lineHeight:1}}>✕</button>
+              </div>
+              {row(`アウト（現在: ${G.outs}）`,G.outs,
+                ()=>setCOuts(Math.max(0,G.outs-1)),
+                ()=>setCOuts(Math.min(3,G.outs+1))
+              )}
+              {row(`${G.ourTeam} 得点（現在: ${G.ourScore}）`,G.ourScore,
+                ()=>setCOurScore(Math.max(0,G.ourScore-1)),
+                ()=>setCOurScore(G.ourScore+1)
+              )}
+              {row(`${G.oppTeam} 得点（現在: ${G.oppScore}）`,G.oppScore,
+                ()=>setCOppScore(Math.max(0,G.oppScore-1)),
+                ()=>setCOppScore(G.oppScore+1)
+              )}
+              <div style={{padding:"10px 0 4px"}}>
+                <div style={{fontSize:11,fontWeight:900,color:C.gray,marginBottom:6}}>打席を進める</div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>{snap();upd(g=>{const lu=g.lineup;const old=g.currentBatter;g.currentBatter=(g.currentBatter+1)%Math.max(lu.length,1);addLog(g,`📝 観覧できずスコア強制修正（打順 ${old+1}番→${g.currentBatter+1}番）`,"s");});}} style={{flex:1,padding:"10px",border:`2px solid ${C.green}`,borderRadius:8,background:"#f0faf3",color:C.green,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{G.ourTeam} 次の打者へ</button>
+                  <button onClick={()=>{snap();upd(g=>{const lu=g.lineupThem;const old=g.currentBatterThem||0;g.currentBatterThem=(old+1)%Math.max(lu.length,1);addLog(g,`📝 観覧できずスコア強制修正（相手打順 ${old+1}番→${g.currentBatterThem+1}番）`,"s");});}} style={{flex:1,padding:"10px",border:`2px solid ${C.red}`,borderRadius:8,background:"#fff5f5",color:C.red,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>{G.oppTeam} 次の打者へ</button>
+                </div>
+              </div>
+              <div style={{padding:"10px 0 4px"}}>
+                <div style={{fontSize:11,fontWeight:900,color:C.gray,marginBottom:6}}>フリーメモ（速報ログに記録）</div>
+                <textarea
+                  maxLength={200}
+                  placeholder="例：4回表の記録が漏れていました"
+                  style={{width:"100%",minHeight:70,border:`1.5px solid ${C.border}`,borderRadius:8,padding:"8px 10px",fontSize:13,fontFamily:"inherit",resize:"none",outline:"none",boxSizing:"border-box"}}
+                  id="correctMemo"
+                />
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+                  <span style={{fontSize:10,color:C.gray}}>最大200文字</span>
+                  <button onClick={()=>{const memo=document.getElementById("correctMemo").value.trim();if(!memo)return;snap();upd(g=>{addLog(g,`📝 観覧できずスコア強制修正 メモ：${memo}`,"s");});document.getElementById("correctMemo").value="";showToast("メモを記録しました");}} style={{background:C.blue,border:"none",borderRadius:6,padding:"4px 12px",color:"#fff",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer"}}>ログに記録</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      <div style={{flex:1,overflowY:"auto",padding:8}}>
+        {tab==="live"&&<>
+          {G.gameOver&&(<div style={{background:"#cc2222",borderRadius:10,padding:"10px 14px",marginBottom:8,textAlign:"center"}}><div style={{fontSize:16,fontWeight:900,color:"#fff"}}>🏁 試合終了</div><div style={{fontSize:11,color:"#ffaaaa",marginTop:2}}>設定タブから「新しい試合を開始」してください</div></div>)}
+          <div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:12,padding:8,marginBottom:6,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{display:"flex",flexDirection:"column",gap:3,flexShrink:0}}>
+                {[["B",G.balls,3,"#1a7a3a"],["S",G.strikes,2,"#e65100"],["O",G.outs,2,C.red]].map(([lbl,cnt,max,col])=>(
+                  <div key={lbl} style={{display:"flex",alignItems:"center",gap:3}}>
+                    <span style={{fontSize:8,fontWeight:900,color:C.gray,width:10,textAlign:"right"}}>{lbl}</span>
+                    <div style={{display:"flex",gap:2}}>{Array.from({length:max},(_,i)=><div key={i} style={{width:10,height:10,borderRadius:"50%",border:`1.5px solid ${i<cnt?col:"#c8d0db"}`,background:i<cnt?col:"#e8ecf0"}}/>)}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{borderLeft:`1px solid ${C.border}`,paddingLeft:6,flexShrink:0,minWidth:0}}>
+                {(()=>{
+                  const themBat=G.lineupThem[(G.currentBatterThem||0)%Math.max(G.lineupThem.length,1)];
+                  const showBat=isOurs?batter:themBat;
+                  const showIdx=isOurs?G.currentBatter:(G.currentBatterThem||0);
+                  return(<>
+                    <div style={{fontWeight:900,color:isOurs?C.gold:C.red,fontSize:10,lineHeight:1.2}}>{showBat?showIdx+1:"?"}番</div>
+                    <div style={{fontSize:14,fontWeight:900,whiteSpace:"nowrap"}}>{showBat?showBat.name:isOurs?"選手名":"相手"}</div>
+                    <div style={{fontSize:9,color:C.gray,lineHeight:1.2}}>{showBat?`${showBat.pos}${showBat.num?" #"+showBat.num:""}`:""}</div>
+                  </>);
+                })()}
+              </div>
+              <div style={{flex:1,display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
+                {foulFlash&&<div style={{background:"#fff3e0",border:"2px solid #e65100",borderRadius:6,padding:"4px 0",textAlign:"center",fontSize:13,fontWeight:900,color:"#e65100",marginBottom:2}}>〇 ファール</div>}
+                <div style={{display:"flex",gap:3}}>
+                {strikePick?(<>
+                  <button onClick={()=>{setStrikePick(false);if(G.strikes===2&&(!G.bases[0]||G.outs===2)){setFurinige("3S");}else pitch("S");}} style={{flex:1,padding:"10px 2px",border:"2px solid #1558c0",borderRadius:6,background:"#e8f0ff",color:"#1558c0",fontFamily:"inherit",fontSize:22,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,lineHeight:1}}>/  <span style={{fontSize:9,fontWeight:700,marginTop:2}}>見逃し</span></button>
+                  <button onClick={()=>{setStrikePick(false);if(G.strikes===2&&(!G.bases[0]||G.outs===2)){setFurinige("3S");}else pitch("KS");}} style={{flex:1,padding:"10px 2px",border:"2px solid #cc2222",borderRadius:6,background:"#fff0f0",color:"#cc2222",fontFamily:"inherit",fontSize:22,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,lineHeight:1}}>×<span style={{fontSize:9,fontWeight:700,marginTop:2}}>空振り</span></button>
+                  <button onClick={()=>setStrikePick(false)} style={{flex:1,padding:"10px 2px",border:`1.5px solid ${C.border}`,borderRadius:5,background:"#f0f2f5",color:C.gray,fontFamily:"inherit",fontSize:18,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>✕<span style={{fontSize:9,fontWeight:700,marginTop:2}}>閉じる</span></button>
+                </>):(<>
+                  <button onClick={()=>{if(G.strikes===2&&(!G.bases[0]||G.outs===2)){setFurinige("3S");}else{setStrikePick(true);}}} style={{flex:1,padding:"8px 2px",border:"2px solid #e6b800",borderRadius:6,background:"#fffde7",color:"#a07800",fontFamily:"inherit",fontSize:15,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.1}}>S<span style={{fontSize:7,fontWeight:700}}>ストライク</span></button>
+                  <button onClick={()=>{snap();pitch("B");}} style={{flex:1,padding:"8px 2px",border:"2px solid #1a7a3a",borderRadius:6,background:"#f0faf3",color:"#1a7a3a",fontFamily:"inherit",fontSize:15,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.1}}>B<span style={{fontSize:7,fontWeight:700}}>ボール</span></button>
+                  <button onClick={()=>pitch("F")} style={{flex:1,padding:"8px 2px",border:"2px solid #e65100",borderRadius:6,background:"#fff8f0",color:"#e65100",fontFamily:"inherit",fontSize:15,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.1}}>F<span style={{fontSize:7,fontWeight:700}}>ファール</span></button>
+                  <button onClick={()=>playAction("HBP")} style={{flex:1,padding:"8px 2px",border:"2px solid #6a1a8a",borderRadius:6,background:"#f8f0ff",color:"#6a1a8a",fontFamily:"inherit",fontSize:15,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.1}}>DB<span style={{fontSize:7,fontWeight:700}}>死球</span></button>
+                  <button onClick={()=>setOtherSheet(true)} style={{flex:1,padding:"8px 2px",border:"2px solid #546e7a",borderRadius:6,background:"#eceff1",color:"#546e7a",fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:0,lineHeight:1.2}}>…<span style={{fontSize:7,fontWeight:700}}>その他</span></button>
+                </>)}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{background:C.card,border:`1.5px solid ${C.border}`,borderRadius:12,padding:8,marginBottom:6,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+            <div style={{fontSize:8,fontWeight:900,color:C.blue,letterSpacing:".1em",margin:"4px 0 3px"}}>① 野手（タップ）</div>
+            <div style={{display:"flex",alignItems:"flex-start",gap:4}}>
+              <div style={{flex:1,position:"relative"}}>
+                {/* 守備番号タップ時のみポップアップ表示 */}
+                {pi.fielder&&(
+                  <div style={{position:"absolute",top:6,left:6,right:6,zIndex:10,background:"rgba(10,20,50,.88)",borderRadius:8,padding:"5px 10px",display:"flex",alignItems:"center",gap:6,pointerEvents:"none"}}>
+                    <span style={{fontSize:10,fontWeight:900,color:"#aac4f0",flexShrink:0}}>記号：</span>
+                    <span style={{fontWeight:900,color:"#ffd740",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{buildNote()||pi.fielder}</span>
+                  </div>
+                )}
+                <FieldSvg selected={pi.fielder} onTap={tapFielder} bases={G.bases} runnerNames={G.runnerNames} onToggleBase={handleBaseTap} selectedBase={runnerSheet?.base}/>
+              </div>
+              {/* 右側：1個戻すボタン */}
+              <button onClick={()=>undoAction()} style={{flexShrink:0,padding:"12px 6px",border:`1.5px solid ${C.border}`,borderRadius:8,background:"#f0f2f5",color:C.gray,fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,marginTop:4}}>
+                <span style={{fontSize:14}}>↩</span>
+                <span style={{fontSize:8,writingMode:"vertical-rl",letterSpacing:2}}>一個戻す</span>
+              </button>
+            </div>
+            <div style={{fontSize:8,fontWeight:900,color:C.blue,letterSpacing:".1em",margin:"4px 0 3px"}}>② 位置（任意）</div>
+            <div style={{display:"flex",gap:4,marginBottom:5}}>
+              {["前","後","横"].map(m=>(
+                <button key={m} onClick={()=>setPi(p=>({...p,mod:p.mod===m?null:m}))} style={{flex:1,padding:"6px 0",border:`1.5px solid ${pi.mod===m?C.blue:C.border}`,borderRadius:5,background:pi.mod===m?C.blue:C.bg,color:pi.mod===m?"#fff":C.text,fontFamily:"inherit",fontSize:13,fontWeight:900,cursor:"pointer"}}>{m}</button>
+              ))}
+            </div>
+            <div style={{fontSize:8,fontWeight:900,color:C.blue,letterSpacing:".1em",margin:"4px 0 3px"}}>③ 軌道</div>
+            <div style={{display:"flex",gap:4,marginBottom:5}}>
+              {[["G","ゴロ）"],["F","フライ（"],["L","ライナー－"]].map(([code,lbl])=>(
+                <button key={code} onClick={()=>setPi(p=>({...p,traj:p.traj===code?null:code}))} style={{flex:1,padding:"6px 2px",border:`1.5px solid ${pi.traj===code?C.gold:C.border}`,borderRadius:5,background:pi.traj===code?C.gold:C.bg,color:pi.traj===code?"#fff":C.text,fontFamily:"inherit",fontSize:9,fontWeight:900,cursor:"pointer"}}>{lbl}</button>
+              ))}
+              <button onClick={()=>setBuntSheet(true)} style={{flex:1,padding:"6px 2px",border:`1.5px solid ${pi.buntType?C.gold:C.border}`,borderRadius:5,background:pi.buntType?C.gold:C.bg,color:pi.buntType?"#fff":C.text,fontFamily:"inherit",fontSize:9,fontWeight:900,cursor:"pointer"}}>
+                {pi.buntType?({sac:"犠B",safety:"安B",squeeze:"スクB"}[pi.buntType]):"バント"}
+              </button>
+            </div>
+            <div style={{fontSize:8,fontWeight:900,color:C.blue,letterSpacing:".1em",margin:"4px 0 3px",display:"flex",alignItems:"center",gap:6}}>
+              ④ 送球先
+              <button onClick={()=>setPi(p=>({...p,throws:p.throws.slice(0,-1)}))} style={{fontSize:9,background:"none",border:`1px solid ${C.border}`,borderRadius:4,padding:"1px 7px",color:C.gray,cursor:"pointer",fontFamily:"inherit"}}>↩消す</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:4,marginBottom:5}}>
+              {[["2","捕"],["3","一"],["4","二"],["5","三"],["6","遊"]].map(([n,sub])=>{
+                const inThrows=pi.throws.includes(n);
+                return(<button key={n} onClick={()=>setPi(p=>({...p,throws:[...p.throws,n]}))} style={{padding:"7px 2px",border:`1.5px solid ${inThrows?C.blue:C.border}`,borderRadius:5,background:inThrows?"#E6F1FB":"#f0f2f5",color:inThrows?C.blue:C.text,fontSize:13,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>{n}<span style={{fontFamily:"inherit",fontSize:7,color:inThrows?C.blue:C.gray,fontWeight:700}}>{sub}</span></button>);
+              })}
+              <button onClick={()=>setErrorSheet(true)} style={{padding:"7px 2px",border:`1.5px solid ${pi.throws.some(t=>t.startsWith("E"))?C.red:"#e65100"}`,borderRadius:5,background:pi.throws.some(t=>t.startsWith("E"))?"#fff5f5":"#fff8f0",color:pi.throws.some(t=>t.startsWith("E"))?C.red:"#e65100",fontFamily:"inherit",fontSize:13,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>E<span style={{fontFamily:"inherit",fontSize:7,color:pi.throws.some(t=>t.startsWith("E"))?C.red:"#e65100",fontWeight:700}}>{pi.throws.some(t=>t.startsWith("E"))?"記録済":"失策"}</span></button>
+            </div>
+            <div style={{fontSize:8,fontWeight:900,color:C.blue,letterSpacing:".1em",margin:"4px 0 3px"}}>⑤ 打撃結果</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:3,marginBottom:5}}>
+              {[["②",C.green,"#f0faf3","2B","二塁打"],["③",C.green,"#f0faf3","3B","三塁打"],["本",C.gold,"#fffde7","HR","HR"]].map(([lbl,col,bg,t,sub])=>(
+                <button key={t} onClick={()=>{snap();upd(g=>{const isO=isOurBat(g);const lu=isO?g.lineup:g.lineupThem;const cb=isO?g.currentBatter:(g.currentBatterThem||0);const bat=lu[cb];const n=buildNote();doHit(g,t,n||t);}) ;clearPi()}} style={{padding:"7px 2px",border:`2px solid ${col}`,borderRadius:6,background:bg,color:col,fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>{lbl}<span style={{fontSize:7,marginTop:1,fontWeight:700}}>{sub}</span></button>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 2fr",gap:5,marginBottom:5,alignItems:"stretch"}}>
+              {/* ゲッツー（小さめ） */}
+              <button onClick={()=>{const note=buildNote();if(!note){showToast("野手を選んでください");return;}confirmPlay("DP");clearPi()}} style={{border:`2px solid ${C.gold}`,borderRadius:6,padding:"8px 2px",background:"#fff8e1",color:C.gold,fontFamily:"inherit",fontSize:9,fontWeight:900,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1}}>⚡<span>ゲッツー</span></button>
+              {/* アウト */}
+              <button onClick={()=>{
+                const note=buildNote();if(!note){showToast("野手を選んでください");return;}
+                if(pi.buntType==="sac"){snap();upd(g=>{doOut(g,"SH",note);});clearPi()}
+                else if(pi.buntType==="squeeze"){snap();upd(g=>{const isOurs=isOurBat(g);autoScore(g,isOurs);if(g.bases[2]){g.bases[2]=false;if(g.runnerNames)g.runnerNames[2]=null;}doOut(g,"SH",note);});clearPi()}
+                else if((pi.traj==="F"||pi.traj===null)&&G.bases[2]&&G.outs<2){setSfSheet(true);}
+                else{confirmPlay("OUT");clearPi()}
+              }} style={{border:"none",borderRadius:6,padding:"10px 2px",background:C.red,color:"#fff",fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer"}}>
+                {pi.buntType==="sac"?"△ 犠打（打数なし）":pi.buntType==="squeeze"?"💨 スクイズ成功":pi.buntType==="safety"?"❌ セーフティ失敗":"❌ アウト"}
+              </button>
+              {/* セーフ */}
+              {(()=>{
+                const autoFC=pi.fielder&&pi.throws.some(t=>["2","4","5"].includes(t));
+                const isBunt=!!pi.buntType;
+                return(
+                  <button onClick={()=>{
+                    const n=buildNote();
+                    const fc=pi.fielder&&pi.throws.some(t=>["2","4","5"].includes(t));
+                    if(fc){snap();upd(g=>{doHit(g,"FC",n||"FC");});clearPi()}
+                    else if(isBunt){snap();upd(g=>{doHit(g,"1B",n||"安打");});clearPi()}
+                    else{if(!n){showToast("野手を選んでください");return;}snap();upd(g=>{doHit(g,"1B",n);});clearPi()}
+                  }} style={{border:`2px solid ${autoFC?C.gold:C.green}`,borderRadius:6,padding:"10px 4px",background:autoFC?"#fffde7":"#f0faf3",color:autoFC?C.gold:C.green,fontFamily:"inherit",fontSize:11,fontWeight:900,cursor:"pointer"}}>
+                    {autoFC?"🔄 FC野選":isBunt?"✅ バントセーフ":"✅ セーフ"}
+                    <span style={{display:"block",fontSize:8,fontWeight:700,marginTop:1,opacity:.8}}>{autoFC?"FC自動判定":isBunt?"安打として記録":"安打で記録"}</span>
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+          {sfSheet&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+              <div style={{background:"#fff",borderRadius:"16px 16px 0 0",padding:"14px 12px 28px",width:"100%",maxWidth:480}}>
+                {/* ヘッダー */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <div style={{fontSize:16,fontWeight:900,color:C.navy}}>🏃 犠牲フライ？</div>
+                  <button onClick={()=>setSfSheet(false)} style={{width:40,height:40,borderRadius:"50%",background:"#f0f2f5",border:`1.5px solid ${C.border}`,color:C.gray,fontSize:22,fontWeight:900,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>
+                </div>
+                {/* 犠牲フライ */}
+                <button onClick={()=>{
+                  setSfSheet(false);
+                  const note=buildNote();
+                  snap();upd(g=>{
+                    const isOurs=isOurBat(g);
+                    const lineup=isOurs?g.lineup:g.lineupThem;
+                    const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+                    const bat=lineup[cb];
+                    const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+                    const r3=g.runnerNames?g.runnerNames[2]:null;
+                    // 三塁走者ホームイン
+                    autoScore(g,isOurs);
+                    g.bases[2]=false;if(g.runnerNames)g.runnerNames[2]=null;
+                    // 打者の記録
+                    if(bat){bat.ab=(bat.ab||0)+1;bat.rbi=(bat.rbi||0)+1;}
+                    if(isOurs)setSB(g,inKey,"SF",note||"SF","");
+                    else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="SF";g.scorebookThem[cb][inKey+"_note"]=note||"SF";}
+                    g.outs++;
+                    const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:"打者";
+                    addLog(g,`✅ ${nameWithOrder} 犠牲フライ${note?" ("+note+")":""}${r3?" — "+r3+"生還!":""}`, "h");
+                    if(isOurs&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+                    else if(!isOurs&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+                    g.balls=0;g.strikes=0;clearPi();
+                    if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");doChange(g);showToast("チェンジ！");return;}
+                    showToast("犠牲フライ！得点！");
+                  })
+                }} style={{width:"100%",padding:"16px 14px",border:`3px solid ${C.gold}`,borderRadius:12,background:"#fffde7",cursor:"pointer",fontFamily:"inherit",marginBottom:10,textAlign:"left",display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:50,height:50,borderRadius:10,background:C.gold,color:"#fff",fontWeight:900,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>SF</div>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:900,color:C.gold}}>犠牲フライ（SF）</div>
+                    <div style={{fontSize:11,fontWeight:800,color:"#7a6000",marginTop:2}}>三塁走者ホームイン → 得点＋打者アウト</div>
+                  </div>
+                </button>
+                {/* フライアウト */}
+                <button onClick={()=>{
+                  setSfSheet(false);
+                  const note=buildNote();
+                  snap();upd(g=>{doOut(g,"FO",note||"FO");});clearPi()
+                }} style={{width:"100%",padding:"16px 14px",border:`3px solid ${C.red}`,borderRadius:12,background:"#fff5f5",cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:50,height:50,borderRadius:10,background:C.red,color:"#fff",fontWeight:900,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>FO</div>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:900,color:C.red}}>フライアウト（FO）</div>
+                    <div style={{fontSize:11,fontWeight:800,color:"#992222",marginTop:2}}>走者進まず → 打者アウトのみ</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+          {buntSheet&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+              <div style={{background:"#fff",borderRadius:"18px 18px 0 0",padding:16,width:"100%",maxWidth:480,paddingBottom:28}}>
+                <div style={{background:C.navy,borderRadius:10,padding:"10px 14px",marginBottom:12,position:"relative"}}>
+                  <div style={{fontSize:14,fontWeight:900,color:"#ffd740",textAlign:"center"}}>🏏 バントの種類</div>
+                  <button onClick={()=>setBuntSheet(false)} style={{position:"absolute",top:8,right:10,background:"none",border:"none",color:"#aac4f0",fontSize:18,fontWeight:900,cursor:"pointer"}}>✕</button>
+                </div>
+                {[["sac","犠打（送りバント）","🔄","走者を進めるための犠牲バント。打者アウトでOK。","#e8f5e9",C.green],["safety","セーフティバント","✅","打者もセーフを狙うバント。成功すれば安打。","#e3f2fd",C.blue],["squeeze","スクイズ","💨","三塁走者を本塁に返すためのバント。","#fff8e1",C.gold]].map(([type,name,ico,desc,bg,col])=>(
+                  <button key={type} onClick={()=>{
+                    setBuntSheet(false);
+                    const note=buildNote()||({sac:"犠打",safety:"安B",squeeze:"スクイズ"}[type]);
+                    snap();
+                    upd(g=>{
+                      if(!g.runnerNames)g.runnerNames=[null,null,null];
+                      const isO=isOurBat(g);
+                      if(type==="sac"){
+                        // 走者を全員1つ進塁
+                        for(let i=2;i>=0;i--){
+                          if(g.bases[i]){
+                            const r=g.runnerNames[i];
+                            g.bases[i]=false;g.runnerNames[i]=null;
+                            if(i===2){autoScore(g,isO);}
+                            else{g.bases[i+1]=true;g.runnerNames[i+1]=r;}
+                          }
+                        }
+                        doOut(g,"SH",note);
+                      } else if(type==="squeeze"){
+                        // 3塁走者生還
+                        if(g.bases[2]){autoScore(g,isO);g.bases[2]=false;if(g.runnerNames)g.runnerNames[2]=null;}
+                        doOut(g,"SH",note);
+                      } else if(type==="safety"){
+                        // セーフティ成功＝安打
+                        doHit(g,"1B",note);
+                      }
+                    });
+                    clearPi()
+                  }} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:12,background:bg,border:`2px solid ${col}`,borderRadius:10,padding:"12px 14px",cursor:"pointer",fontFamily:"inherit",marginBottom:8,textAlign:"left"}}>
+                    <div style={{width:44,height:44,borderRadius:8,background:col,color:"#fff",fontWeight:900,fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ico}</div>
+                    <div><div style={{fontSize:13,fontWeight:900,color:col,marginBottom:3}}>{name}</div><div style={{fontSize:11,color:C.gray,lineHeight:1.5}}>{desc}</div></div>
+                  </button>
+                ))}
+                <button onClick={()=>{setPi(p=>({...p,buntType:null}));setBuntSheet(false);}} style={{width:"100%",background:"#f0f2f5",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 0",color:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>クリア</button>
+              </div>
+            </div>
+          )}
+          {otherSheet&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+              <div style={{background:"#fff",borderRadius:"18px 18px 0 0",padding:16,width:"100%",maxWidth:480,paddingBottom:28,maxHeight:"90vh",overflowY:"auto"}}>
+                <div style={{background:"#37474f",borderRadius:10,padding:"10px 14px",marginBottom:12,position:"relative"}}>
+                  <div style={{fontSize:14,fontWeight:900,color:"#ffd740",textAlign:"center"}}>その他のプレー</div>
+                  <button onClick={()=>setOtherSheet(false)} style={{position:"absolute",top:8,right:10,background:"none",border:"none",color:"#b0bec5",fontSize:18,fontWeight:900,cursor:"pointer"}}>✕</button>
+                </div>
+                {[
+                  {key:"bk",ico:"BK",title:"ボーク",col:"#795548",bg:"#efebe9",action:()=>{doBalk();setOtherSheet(false);}},
+                  {key:"wp",ico:"WP",title:"暴投（WP）",col:"#546e7a",bg:"#eceff1",action:()=>{snap();upd(g=>{if(!g.runnerNames)g.runnerNames=[null,null,null];const isO=isOurBat(g);for(let i=2;i>=0;i--){if(g.bases[i]){const r=g.runnerNames[i];g.bases[i]=false;g.runnerNames[i]=null;if(i===2)autoScore(g,isO);else{g.bases[i+1]=true;g.runnerNames[i+1]=r;}}}addLog(g,"💥 WP 暴投—走者進塁","b");showToast("WP 暴投！");});setOtherSheet(false);}},
+                  {key:"pb",ico:"PB",title:"捕逸（PB）",col:"#546e7a",bg:"#eceff1",action:()=>{snap();upd(g=>{if(!g.runnerNames)g.runnerNames=[null,null,null];const isO=isOurBat(g);for(let i=2;i>=0;i--){if(g.bases[i]){const r=g.runnerNames[i];g.bases[i]=false;g.runnerNames[i]=null;if(i===2)autoScore(g,isO);else{g.bases[i+1]=true;g.runnerNames[i+1]=r;}}}addLog(g,"💥 PB 捕逸—走者進塁","b");showToast("PB 捕逸！");});setOtherSheet(false);}},
+                  {key:"int",ico:"妨",title:"打撃妨害",col:"#607d8b",bg:"#eceff1",action:()=>{doInterference();setOtherSheet(false);}},
+                  {key:"iff",ico:"IFF",title:"インフィールドフライ",col:"#1565c0",bg:"#e3f2fd",action:()=>{snap();upd(g=>{const isO=isOurBat(g);const lu=isO?g.lineup:g.lineupThem;const cb=isO?g.currentBatter:(g.currentBatterThem||0);const bat=lu[cb];const name=bat?bat.name:"打者";const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:name;const inKey=`${g.inning}${g.isTop?"T":"B"}`;if(bat)bat.ab=(bat.ab||0)+1;if(isO)setSB(g,inKey,"FO","IFF","");else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="FO";g.scorebookThem[cb][inKey+"_note"]="IFF";}g.outs++;addLog(g,`📢 ${nameWithOrder} IFF—打者自動アウト`,"o");if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);}else{showToast(`${name} IFF自動アウト`);g.balls=0;g.strikes=0;if(isO&&lu.length)g.currentBatter=(g.currentBatter+1)%lu.length;else if(!isO&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;else if(!isO)g.currentBatterThem=(g.currentBatterThem||0)+1;}clearPi();});setOtherSheet(false);}},
+                  {key:"entitle2b",ico:"2B",title:"エンタイトル2ベース",col:"#0277bd",bg:"#e3f2fd",action:()=>{snap();upd(g=>{
+  if(!g.runnerNames)g.runnerNames=[null,null,null];
+  const isO=isOurBat(g);
+  const lu=isO?g.lineup:g.lineupThem;
+  const cb=isO?g.currentBatter:(g.currentBatterThem||0);
+  const bat=lu[cb];
+  const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:"打者";
+  const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+  if(bat){bat.ab=(bat.ab||0)+1;bat.hits=(bat.hits||0)+1;}
+  // 走者を全員2つ進塁
+  for(let i=2;i>=0;i--){
+    if(g.bases[i]){
+      const r=g.runnerNames[i];
+      g.bases[i]=false;g.runnerNames[i]=null;
+      if(i+2>=3)autoScore(g,isO);
+      else{g.bases[i+2]=true;g.runnerNames[i+2]=r;}
+    }
+  }
+  // 打者を2塁へ
+  const lbl=bat?`${cb+1}${bat.name.slice(0,2)}`:"?";
+  g.bases[1]=true;g.runnerNames[1]=lbl;
+  if(isO)setSB(g,inKey,"2B","エンタイトル2B","");
+  else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="2B";g.scorebookThem[cb][inKey+"_note"]="エンタイトル2B";}
+  addLog(g,`🔴 ${nameWithOrder} エンタイトル2ベース`,"h");
+  g.balls=0;g.strikes=0;
+  if(isO&&lu.length)g.currentBatter=(g.currentBatter+1)%lu.length;
+  else if(!isO&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+  else if(!isO)g.currentBatterThem=(g.currentBatterThem||0)+1;
+  clearPi();
+  showToast(`${bat?bat.name:"打者"} エンタイトル2B！`);
+});setOtherSheet(false);}},
+{key:"def_bat",ico:"打妨",title:"守備妨害（打者）",col:"#880e4f",bg:"#fce4ec",action:()=>{snap();upd(g=>{const isO=isOurBat(g);const lu=isO?g.lineup:g.lineupThem;const cb=isO?g.currentBatter:(g.currentBatterThem||0);const bat=lu[cb];const name=bat?bat.name:"打者";const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:name;const inKey=`${g.inning}${g.isTop?"T":"B"}`;if(isO)setSB(g,inKey,"FO","守備妨害","");else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="FO";g.scorebookThem[cb][inKey+"_note"]="守備妨害";}g.outs++;addLog(g,`⚠ ${nameWithOrder} 守備妨害—打者アウト`,"o");if(g.outs>=3){addLog(g,"🔄 3アウト チェンジ！","s");showToast("チェンジ！");doChange(g);}else{showToast(`${name} 守備妨害アウト`);g.balls=0;g.strikes=0;if(isO&&lu.length)g.currentBatter=(g.currentBatter+1)%lu.length;else if(!isO&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;else if(!isO)g.currentBatterThem=(g.currentBatterThem||0)+1;}clearPi();});setOtherSheet(false);}},
+                ].map(({key,ico,title,col,bg,action})=>(
+                  <button key={key} onClick={action} style={{width:"100%",display:"flex",alignItems:"center",gap:12,background:bg,border:`2px solid ${col}`,borderRadius:10,padding:"12px 14px",cursor:"pointer",fontFamily:"inherit",marginBottom:8,textAlign:"left"}}>
+                    <div style={{width:46,height:46,borderRadius:8,background:col,color:"#fff",fontWeight:900,fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,lineHeight:1}}>{ico}</div>
+                    <div style={{fontSize:13,fontWeight:900,color:col}}>{title}</div>
+                  </button>
+                ))}
+                <button onClick={()=>setOtherSheet(false)} style={{width:"100%",background:"#f0f2f5",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 0",color:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>閉じる</button>
+              </div>
+            </div>
+          )}
+          {errorSheet&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:900,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+              <div style={{background:"#fff",borderRadius:"18px 18px 0 0",padding:16,width:"100%",maxWidth:480,paddingBottom:28}}>
+                <div style={{background:"#7f1010",borderRadius:10,padding:"10px 14px",marginBottom:12,position:"relative"}}>
+                  <div style={{fontSize:14,fontWeight:900,color:"#ffd740",textAlign:"center"}}>⚠ 失策（エラー）を記録</div>
+                  <button onClick={()=>setErrorSheet(false)} style={{position:"absolute",top:8,right:10,background:"none",border:"none",color:"#ffaaaa",fontSize:18,fontWeight:900,cursor:"pointer"}}>✕</button>
+                </div>
+                <div style={{display:"flex",gap:6,marginBottom:12}}>
+                  {[["catch","捕球ミス"],["throw","悪送球"]].map(([k,lbl])=>{const sel=pi.errorType===k;return(<button key={k} onClick={()=>setPi(p=>({...p,errorType:p.errorType===k?null:k}))} style={{flex:1,padding:"10px 6px",border:`2px solid ${sel?C.red:C.border}`,borderRadius:10,background:sel?"#fff5f5":"#fafafa",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}><div style={{fontSize:13,fontWeight:900,color:sel?C.red:C.text}}>{lbl}</div></button>);})}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:12}}>
+                  {[["1","投手"],["2","捕手"],["3","一塁手"],["4","二塁手"],["5","三塁手"],["6","遊撃手"],["7","左翼手"],["8","中堅手"],["9","右翼手"]].map(([num,pos])=>(
+                    <button key={num} onClick={()=>{
+                      const etype=pi.errorType;
+                      const thrower=pi.fielder; // 元々タップされた野手
+                      // 送球エラーの記録: thrower→num がエラー
+                      const eNote=thrower&&thrower!==num
+                        ? `${thrower}-E${num}` // 例: 9-E3
+                        : `E${num}`;
+                      const logNote=thrower&&thrower!==num
+                        ? `${FIELDER_NAME[thrower]||thrower}からの送球を${FIELDER_NAME[num]||num}がエラー`
+                        : `${FIELDER_NAME[num]||num} エラー`;
+                      setErrorSheet(false);snap();
+                      upd(g=>{
+                        const isOurs=isOurBat(g);const lineup=isOurs?g.lineup:g.lineupThem;
+                        const cb=isOurs?g.currentBatter:(g.currentBatterThem||0);
+                        const bat=lineup[cb];const nameWithOrder=bat?`${cb+1}番 ${bat.name}`:"打者";
+                        const inKey=`${g.inning}${g.isTop?"T":"B"}`;
+                        if(bat)bat.ab=(bat.ab||0)+1;
+                        if(isOurs)setSB(g,inKey,"1B",eNote,"");
+                        else{if(!g.scorebookThem[cb])g.scorebookThem[cb]={};g.scorebookThem[cb][inKey]="1B";g.scorebookThem[cb][inKey+"_note"]=eNote;}
+                        advBases(g,1,false,isOurs,bat||{name:"打者",num:""},bat?cb+1:null);
+                        addLog(g,`⚠ ${nameWithOrder} 失策セーフ（${logNote}）`,"b");
+                        showToast(`失策！${logNote}`);
+                        g.balls=0;g.strikes=0;
+                        if(isOurs&&lineup.length)g.currentBatter=(g.currentBatter+1)%lineup.length;
+                        else if(!isOurs&&g.lineupThem.length)g.currentBatterThem=((g.currentBatterThem||0)+1)%g.lineupThem.length;
+                        else if(!isOurs)g.currentBatterThem=(g.currentBatterThem||0)+1;
+                      });clearPi();
+                    }} style={{padding:"12px 4px",border:`2px solid ${C.border}`,borderRadius:10,background:"#f8fafc",cursor:"pointer",fontFamily:"inherit",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <span style={{fontSize:22,fontWeight:900,color:C.red}}>{num}</span>
+                      <span style={{fontSize:10,color:C.gray,fontWeight:700}}>{pos}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={()=>setErrorSheet(false)} style={{width:"100%",background:"#f0f2f5",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 0",color:C.gray,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer"}}>キャンセル</button>
+              </div>
+            </div>
+          )}
+          {runnerSheet&&(()=>{
+            const b=runnerSheet.base;
+            const rn=G.runnerNames[b-1]||"走者";
+            const bn=["1塁","2塁","3塁"];
+            const next=b===1?2:b===2?3:"home";
+            const bigBtn=(lbl,action,tb,bg,col,emoji="")=>(
+              <button onClick={()=>doRunnerAction(action,tb)} style={{padding:"12px 4px",border:`2px solid ${col}`,borderRadius:10,background:bg,color:col,fontFamily:"inherit",fontSize:12,fontWeight:900,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                {emoji&&<span style={{fontSize:16,lineHeight:1}}>{emoji}</span>}{lbl}
+              </button>
+            );
+            const smBtn=(lbl,action,tb,col)=>(
+              <button key={lbl} onClick={()=>doRunnerAction(action,tb)} style={{padding:"8px 4px",border:`1.5px solid ${col}`,borderRadius:7,background:"#fff",color:col,fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer",textAlign:"center"}}>{lbl}</button>
+            );
+            return(
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:950,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget){setRunnerSheet(null);setRundownNote("");}}}>
+                <div style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:480,maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+                  {/* ヘッダー */}
+                  <div style={{background:"#01579b",borderRadius:"16px 16px 0 0",padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+                    <div style={{fontSize:14,fontWeight:900,color:"#fff"}}>🏃 {rn}（{bn[b-1]}）</div>
+                    <button onClick={()=>{setRunnerSheet(null);setRundownNote("");}} style={{background:"none",border:"none",fontSize:20,color:"rgba(255,255,255,.8)",cursor:"pointer",padding:"0 4px",lineHeight:1}}>✕</button>
+                  </div>
+                  {/* スクロール可能なコンテンツ */}
+                  <div style={{overflowY:"auto",padding:"12px 10px 24px"}}>
+                    {/* 基本操作（大ボタン） */}
+                    <div style={{display:"grid",gridTemplateColumns:b===1?"1fr 1fr 1fr":b===2?"1fr 1fr 1fr":"1fr 1fr",gap:6,marginBottom:6}}>
+                      {b===1&&bigBtn("→2塁","advance",2,"#e8f5e9",C.green,"➡️")}
+                      {b===1&&bigBtn("→3塁","advance",3,"#e8f5e9",C.green,"⏩")}
+                      {b===2&&bigBtn("→3塁","advance",3,"#e8f5e9",C.green,"➡️")}
+                      {bigBtn("得　点","score","home","#fffde7",C.gold,"🏠")}
+                      {b>=2&&bigBtn("前塁戻す","retreat",null,"#f3e5f5","#6a1a8a","↩")}
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+                      {bigBtn("盗塁成功","steal",next,"#e8f5e9",C.green,"💨")}
+                      {bigBtn("盗塁死","caught",next,"#fff5f5",C.red,"❌")}
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+                      {bigBtn("タッチ\nアウト","out_touch",null,"#fff5f5",C.red,"🤚")}
+                      {bigBtn("フォース\nアウト","out_force",null,"#fff5f5",C.red,"🔴")}
+                      {bigBtn("牽制\nアウト","pickoff",null,"#fff5f5",C.red,"⚠️")}
+                    </div>
+                    {/* 特殊操作（小ボタン） */}
+                    <div style={{borderTop:`1px dashed ${C.border}`,paddingTop:8}}>
+                      <div style={{fontSize:8,color:C.gray,fontWeight:900,marginBottom:5}}>その他・特殊プレー</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:4}}>
+                        {smBtn("タッチアップ成功","tagup",next,C.green)}
+                        {smBtn("タッチアップ失敗","tagup_fail",null,C.red)}
+                        {smBtn("DS成功","delayed_steal",next,"#0288d1")}
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:4}}>
+                        {smBtn("DS失敗","delayed_caught",next,C.red)}
+                        {smBtn("エラー進塁","error_advance",next,"#e65100")}
+                        {smBtn("本塁憤死","out_at_home",null,C.red)}
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:6}}>
+                        {smBtn("WP暴投","wp",next,"#795548")}
+                        {smBtn("PB捕逸","pb",next,"#795548")}
+                        {smBtn("走塁妨害","run_obst",next,"#e65100")}
+                      </div>
+                      <div style={{display:"flex",gap:4}}>
+                        <input value={rundownNote} onChange={e=>setRundownNote(e.target.value)} placeholder="ランダウン 例:6-4-2" style={{flex:1,border:`1px solid ${C.border}`,borderRadius:6,padding:"6px 8px",fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+                        <button onClick={()=>doRunnerAction("rundown",rundownNote)} style={{padding:"6px 12px",border:`1.5px solid #6a1a8a`,borderRadius:7,background:"#f3e5f5",color:"#6a1a8a",fontFamily:"inherit",fontSize:10,fontWeight:900,cursor:"pointer"}}>実行</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          <div style={sec}>📜 速報ログ</div>
+          <div style={{background:"#f8fafc",border:`1.5px solid ${C.border}`,borderRadius:8,maxHeight:200,overflowY:"auto"}}>
+            {!G.log.length&&<div style={{padding:10,color:C.gray,fontSize:10,textAlign:"center"}}>記録なし</div>}
+            {G.log.map((l,i)=>(
+              <div key={i} style={{display:"flex",gap:6,padding:"5px 8px",borderBottom:`1px solid #e8ecf0`,fontSize:10,color:l.type==="r"?"#cc2222":l.type==="o"?"#c05000":l.type==="b"?C.blue:C.text}}>
+                <span style={{fontSize:7,color:C.gray,flexShrink:0,marginTop:1}}>{l.t}</span><span style={{flex:1,lineHeight:1.4}}>{l.msg}</span>
+              </div>
+            ))}
+          </div>
+        </>}
+        {tab==="score"&&<ScoreTab G={G} C={C} sec={sec}/>}
+        {tab==="lineup"&&<LineupTab G={G} upd={upd} snap={snap} showToast={showToast} C={C} sec={sec}/>}
+        {tab==="config"&&<>
+          <div style={sec}>試合設定</div>
+          <ConfigPanel G={G} upd={upd} showToast={showToast} snap={snap}/>
+        </>}
+        {tab==="history"&&<HistoryTab/>}
+      </div>
+    </div>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
